@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-serif: 'Playfair Display', serif;
+
+  --color-dental-50: #f0f9ff;
+  --color-dental-100: #e0f2fe;
+  --color-dental-200: #bae6fd;
+  --color-dental-600: #0284c7;
+  --color-dental-700: #0369a1;
+  --color-dental-800: #075985;
+  --color-dental-900: #0c4a6e;
+  --color-accent-500: #10b981;
+  --color-accent-600: #059669;
+}
+
+/* ── Base Setup ── */
+body { 
+  font-family: 'Inter', sans-serif; 
+  background-color: #f8fafc; 
+}
+
+* { scroll-behavior: smooth; }
+
+/* ── Animations ── */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseSlow {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes fadeIn { 
+  from { opacity: 0; transform: translateY(10px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-fade-in-up { animation: fadeInUp 0.8s ease-out; }
+.animate-pulse-slow { animation: pulseSlow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.fade-in { animation: fadeIn 0.4s ease-out forwards; }
+
+/* ── UI Effects ── */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+}
+
+.hero-gradient {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #dbeafe 100%);
+}
+
+.card-hover { 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+}
+.card-hover:hover { 
+  transform: translateY(-4px); 
+  box-shadow: 0 15px 30px -10px rgba(2, 132, 199, 0.1); 
+}
+
+.service-card:hover .service-icon {
+  transform: scale(1.1) rotate(5deg);
+}
+
+/* ── Navigation Links ── */
+.nav-link, .nav-link-underline {
+  position: relative;
+  cursor: pointer;
+}
+.nav-link::after, .nav-link-underline::after {
+  content: '';
+  display: block;
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #0284c7;
+  transition: width 0.3s;
+}
+.nav-link:hover::after, .active-nav::after, .nav-link-underline:hover::after {
+  width: 100%;
+}
+.active-nav {
+  color: #0284c7 !important;
+  font-weight: 600;
+}
+
+/* ── Components ── */
+/* Custom checkbox for task list */
+.task-checkbox:checked + div { 
+  text-decoration: line-through; 
+  color: #94a3b8; 
+}
+
+/* ── Custom Scrollbar ── */
+::-webkit-scrollbar { 
+  width: 6px; 
+  height: 6px; 
+}
+::-webkit-scrollbar-track { 
+  background: transparent; 
+}
+::-webkit-scrollbar-thumb { 
+  background: #bae6fd; 
+  border-radius: 10px; 
+}
+::-webkit-scrollbar-thumb:hover { 
+  background: #0ea5e9; 
+}

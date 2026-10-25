@@ -1,0 +1,10 @@
+{
+  "description": "Delivers an exact digital replica of the specified design with optional enhancements, enabling users to experience a polished and interactive interface.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
