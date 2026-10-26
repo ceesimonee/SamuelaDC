@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Smile, Mail, Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Smile, Mail, Lock, User, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { GoogleLogin } from '@react-oauth/google';
 import emailjs from '@emailjs/browser';
@@ -18,16 +18,63 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // ─── ROUTING HELPER ───
-  const routeUser = async (userId: string) => {
+  // Helper: Send Welcome Email to User's Gmail
+  const sendWelcomeEmail = async (targetEmail: string, targetName: string) => {
+    try {
+      await emailjs.send(
+        'service_i3xusfo',      
+        'template_uw7z0fs',     
+        {
+          email: targetEmail,
+          to_email: targetEmail,
+          user_email: targetEmail,
+          name: targetName,
+          to_name: targetName,
+          user_name: targetName,
+          message: `Welcome to Samuela Dental Clinic, ${targetName}! Your patient portal account has been successfully registered. You can now sign in and book appointments online.`
+        },
+        'zfhT9yUDdqKQyMJ8X'  
+      );
+      console.log("✅ Welcome email sent to:", targetEmail);
+    } catch (emailError) {
+      console.error("⚠️ Failed to send welcome email via EmailJS:", emailError);
+    }
+  };
+
+  // Helper: Track & Verify Registered Accounts Locally + via Supabase Profiles
+  const markEmailAsRegistered = (userEmail: string) => {
+    const clean = userEmail.trim().toLowerCase();
+    const list: string[] = JSON.parse(localStorage.getItem('samuela_registered_emails') || '[]');
+    if (!list.includes(clean)) {
+      list.push(clean);
+      localStorage.setItem('samuela_registered_emails', JSON.stringify(list));
+    }
+  };
+
+  const isEmailRegisteredLocally = (userEmail: string) => {
+    const clean = userEmail.trim().toLowerCase();
+    const list: string[] = JSON.parse(localStorage.getItem('samuela_registered_emails') || '[]');
+    return list.includes(clean);
+  };
+
+  // ─── STRICT ROUTING & ROLE CHECK HELPER ───
+  const routeUser = async (userId: string, userEmail?: string) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.warn("Profile lookup warning:", profileError.message);
+    }
+
+    // Save email to verified list so future logins are recognized
+    if (userEmail) {
+      markEmailAsRegistered(userEmail);
+    }
 
     if (profile?.role === 'admin') {
       navigate('/admin');
@@ -36,10 +83,12 @@ export default function Login() {
     }
   };
 
-  // ─── GOOGLE AUTH HANDLER ───
+  // ─── GOOGLE AUTH HANDLER (STRICT SIGN-UP VS SIGN-IN) ───
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
+
     try {
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
@@ -47,38 +96,66 @@ export default function Login() {
       });
 
       if (error) throw error;
-      
-      if (data.user) {
-        // Check if the Google account was created in the last 15 seconds (New User)
-        const isNewUser = new Date(data.user.created_at).getTime() > Date.now() - 15000;
-
-        if (isNewUser) {
-          // 1. Send the welcome email
-          try {
-            await emailjs.send(
-              'service_i3xusfo',      
-              'template_uw7z0fs',     
-              {
-                email: data.user.email,         
-                name: data.user.user_metadata?.full_name || 'Patient'        
-              },
-              'zfhT9yUDdqKQyMJ8X'  
-            );
-            console.log("Google Welcome email sent successfully!");
-          } catch (emailError) {
-            console.error("Failed to send Google welcome email:", emailError);
-          }
-
-          // 2. STOP AUTO-LOGIN: Sign them out and force manual login
-          await supabase.auth.signOut();
-          alert("Account successfully registered! Please sign in to access your portal.");
-          setIsLogin(true); 
-          return; // Stop execution here so it doesn't route to the homepage
-        }
-        
-        // If it's an existing user, route them normally to the home page
-        await routeUser(data.user.id);
+      if (!data.user) {
+        throw new Error('Could not retrieve Google account details.');
       }
+
+      const gUser = data.user;
+      if (!gUser.email) {
+        throw new Error('Google account email is missing.');
+      }
+
+      const gEmail = gUser.email.toLowerCase();
+      const gName = gUser.user_metadata?.full_name || gUser.user_metadata?.name || 'Patient';
+
+      // Check if user already exists in the `profiles` table
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', gUser.id)
+        .maybeSingle();
+
+      // Check if Google account was just created within the last 20 seconds
+      const isNewlyCreatedAuth = new Date(gUser.created_at).getTime() > Date.now() - 20000;
+      const isAlreadyRegistered = Boolean(existingProfile) || isEmailRegisteredLocally(gEmail);
+
+      // CASE 1: User is on the "Create Account" (Sign Up) tab
+      if (!isLogin) {
+        if (!existingProfile) {
+          await supabase.from('profiles').upsert([
+            { id: gUser.id, role: 'patient' }
+          ]).select();
+        }
+
+        markEmailAsRegistered(gEmail);
+
+        // Send Gmail confirmation via EmailJS
+        await sendWelcomeEmail(gEmail, gName);
+
+        // Sign out immediately so they see the confirmation message and log in properly
+        await supabase.auth.signOut();
+        setIsLogin(true);
+        setSuccessMsg(`You registered successfully with Google (${gEmail})! A confirmation email has been sent to your Gmail. Please sign in below.`);
+        return;
+      }
+
+      // CASE 2: User is on the "Welcome Back" (Sign In) tab
+      if (isLogin) {
+        if (isNewlyCreatedAuth && !isEmailRegisteredLocally(gEmail) && existingProfile?.role !== 'admin') {
+          await supabase.auth.signOut();
+          setErrorMsg('This Google account is not registered yet. Please click "Sign up" below to create an account first.');
+          return;
+        }
+
+        if (!isAlreadyRegistered && existingProfile?.role !== 'admin') {
+          await supabase.auth.signOut();
+          setErrorMsg('Account not found. Only registered accounts can sign in. Please sign up first.');
+          return;
+        }
+
+        await routeUser(gUser.id, gEmail);
+      }
+
     } catch (error: any) {
       setErrorMsg(error.message || 'Google authentication failed.');
     } finally {
@@ -86,63 +163,78 @@ export default function Login() {
     }
   };
 
-  // ─── EMAIL AUTH HANDLER ───
+  // ─── EMAIL & PASSWORD AUTH HANDLER ───
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
+
+    const cleanEmail = email.trim().toLowerCase();
 
     try {
       if (isLogin) {
-        // LOGIN
+        // 1. STRICT LOGIN: Verify credentials with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password,
         });
 
-        if (authError) throw authError;
-        if (authData.user) await routeUser(authData.user.id);
+        if (authError) {
+          throw new Error('Invalid email or password. Please make sure your account is registered.');
+        }
+
+        if (!authData.user) {
+          throw new Error('Sign in failed. Account not found.');
+        }
+
+        // 2. Route Admin to /admin and Registered Patient to /
+        await routeUser(authData.user.id, cleanEmail);
         
       } else {
-        // SIGNUP
+        // 1. SIGN UP: Validate inputs
+        if (password.length < 6) {
+          throw new Error('Password must be at least 6 characters long.');
+        }
+
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
           options: {
-            data: { full_name: fullName }
+            data: { full_name: fullName.trim() }
           }
         });
 
         if (error) throw error;
 
-        // Anti-Duplicate Check: If identities array is empty, the email already exists!
+        // Anti-Duplicate Check: If identities array is empty, the email is already registered
         if (data.user && data.user.identities && data.user.identities.length === 0) {
-          throw new Error("This email is already registered. Please sign in instead.");
+          throw new Error('This email is already registered. Please sign in instead.');
         }
-        
-        // SEND WELCOME EMAIL VIA EMAILJS
-        try {
-          await emailjs.send(
-            'service_i3xusfo',      
-            'template_uw7z0fs',     
-            {
-              email: email,         
-              name: fullName        
-            },
-            'zfhT9yUDdqKQyMJ8X'  
-          );
-          console.log("Email/Password Welcome email sent successfully!");
-        } catch (emailError) {
-          console.error("Failed to send welcome email:", emailError);
+
+        // Save profile row in Supabase if table allows it
+        if (data.user) {
+          await supabase.from('profiles').upsert([
+            { id: data.user.id, role: 'patient' }
+          ]);
         }
+
+        // Mark as registered
+        markEmailAsRegistered(cleanEmail);
         
-        // Form stays on Login page, switches view, and asks them to sign in manually
-        alert("Registration successful! You can now sign in.");
+        // 2. SEND WELCOME EMAIL TO USER'S GMAIL
+        await sendWelcomeEmail(cleanEmail, fullName.trim());
+
+        // 3. Sign out any auto-session so they must log in on the Sign In view
+        await supabase.auth.signOut();
+        
+        // 4. Show On-Screen Success Banner & Switch to Sign In view
         setIsLogin(true);
         setPassword('');
+        setSuccessMsg(`You registered successfully! A confirmation email has been sent to ${cleanEmail}. You may now sign in.`);
       }
     } catch (error: any) {
-      setErrorMsg(error.message);
+      setErrorMsg(error.message || 'Authentication error occurred.');
     } finally {
       setLoading(false);
     }
@@ -174,11 +266,22 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Error Message */}
+        {/* On-Screen Registration Success Banner */}
+        {successMsg && (
+          <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl flex items-start gap-3 mb-6 text-sm font-medium animate-fade-in-up border border-emerald-200 shadow-sm">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-emerald-900">Registration Successful!</p>
+              <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">{successMsg}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message Banner */}
         {errorMsg && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-xl flex items-center gap-2 mb-6 text-sm font-medium animate-fade-in-up border border-red-100">
+          <div className="bg-red-50 text-red-600 p-3.5 rounded-xl flex items-center gap-2.5 mb-6 text-sm font-medium animate-fade-in-up border border-red-100">
             <AlertCircle className="w-5 h-5 shrink-0" />
-            {errorMsg}
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -296,7 +399,7 @@ export default function Login() {
             {isLogin ? "Don't have an account?" : "Already have an account?"} 
             <button 
               type="button" 
-              onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setPassword(''); }} 
+              onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setSuccessMsg(''); setPassword(''); }} 
               className="text-dental-600 font-bold hover:text-dental-800 transition-colors ml-1.5"
             >
               {isLogin ? 'Sign up' : 'Sign in'}
