@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, Mail, MessageSquare, X, ChevronDown, ExternalLink } from 'lucide-react';
+import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, MessageSquare, X, ChevronDown, ExternalLink } from 'lucide-react';
 import { supabase } from './lib/supabase';
-import emailjs from '@emailjs/browser';
 
 type Patient = {
   id: string | number;
@@ -46,23 +45,12 @@ export default function AdminQueue() {
 
   const [isNotifyOpen, setIsNotifyOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
-  
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
-
-  const [emailCredits, setEmailCredits] = useState(() => {
-    const saved = localStorage.getItem('email_credits_used');
-    return { used: saved ? parseInt(saved, 10) : 2, total: 200 };
-  });
 
   const [smsQuota, setSmsQuota] = useState(() => {
     const saved = localStorage.getItem('sms_quota_data');
     return saved ? JSON.parse(saved) : { balance: 199, total: 202 };
   });
-
-  useEffect(() => {
-    localStorage.setItem('email_credits_used', emailCredits.used.toString());
-  }, [emailCredits.used]);
 
   useEffect(() => {
     localStorage.setItem('sms_quota_data', JSON.stringify(smsQuota));
@@ -195,97 +183,58 @@ export default function AdminQueue() {
     }
   };
 
-  const handleNotify = async (type: 'sms' | 'email') => {
+  const handleNotifySms = async () => {
     if (!currentPatient) return;
 
-    if (type === 'email') {
-      if (!currentPatient.email) {
-        alert(`Cannot send email: No email address on file for ${currentPatient.name}.`);
-        setIsNotifyOpen(false);
-        return;
-      }
-      if (emailCredits.used >= emailCredits.total) {
-        alert("Email credits exhausted! Please load more credits.");
-        return;
-      }
-      setIsSendingEmail(true);
-      try {
-        await emailjs.send(
-          'service_i3xusfo',      
-          'template_9b2dzwa',     
-          {
-            email: currentPatient.email,         
-            name: currentPatient.name,
-            ticket: currentPatient.ticket,
-            service: currentPatient.service
-          },
-          'zfhT9yUDdqKQyMJ8X'     
-        );
-        setEmailCredits(prev => ({ ...prev, used: prev.used + 1 }));
-        alert(`Email alert sent successfully to ${currentPatient.name}!`);
-      } catch (error) {
-        console.error("Failed to send email alert:", error);
-        alert("Failed to send email. Please check your EmailJS configuration.");
-      } finally {
-        setIsSendingEmail(false);
-      }
-
-    } else if (type === 'sms') {
-      if (!currentPatient.phone) {
-        alert(`Cannot send SMS: No phone number on file for ${currentPatient.name}.`);
-        setIsNotifyOpen(false);
-        return;
-      }
-      if (smsQuota.balance <= 0) {
-        alert("SMS credits exhausted! Please load more credits in your IPROG dashboard.");
-        return;
-      }
-
-      setIsSendingSms(true);
-      try {
-        let cleanPhone = currentPatient.phone.replace(/\D/g, ''); 
-        if (cleanPhone.startsWith('0')) {
-          cleanPhone = '63' + cleanPhone.substring(1);
-        } else if (cleanPhone.startsWith('9') && cleanPhone.length === 10) {
-          cleanPhone = '63' + cleanPhone;
-        }
-        const formattedPhone = '+' + cleanPhone;
-        const messageBody = `Ticket ${currentPatient.ticket}: Your turn for ${currentPatient.service} in 10 mins. Please proceed to waiting area.`;
-
-        // 👉 HERE IS THE FIX: Connecting directly to your Node.js Server on port 5000
-        const response = await fetch('http://localhost:5000/api/send-sms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            phone_number: formattedPhone,
-            message: messageBody
-          })
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error?.message || "Backend request failed");
-        }
-
-        setSmsQuota((prev: any) => ({ ...prev, balance: Math.max(0, prev.balance - 1) }));
-        alert(`SMS Alert sent to ${currentPatient.name} via Express Backend!`);
-        
-      } catch (error) {
-        console.error("Failed to send SMS:", error);
-        alert("Error sending SMS. Check your backend terminal for details.");
-      } finally {
-        setIsSendingSms(false);
-      }
+    if (!currentPatient.phone) {
+      alert(`Cannot send SMS: No phone number on file for ${currentPatient.name}.`);
+      setIsNotifyOpen(false);
+      return;
     }
-    
-    setIsNotifyOpen(false);
-  };
+    if (smsQuota.balance <= 0) {
+      alert("SMS credits exhausted! Please load more credits in your IPROG dashboard.");
+      return;
+    }
 
-  const remainingEmailCredits = emailCredits.total - emailCredits.used;
-  const emailPercentage = Math.round((emailCredits.used / emailCredits.total) * 100);
+    setIsSendingSms(true);
+    try {
+      let cleanPhone = currentPatient.phone.replace(/\D/g, ''); 
+      if (cleanPhone.startsWith('0')) {
+        cleanPhone = '63' + cleanPhone.substring(1);
+      } else if (cleanPhone.startsWith('9') && cleanPhone.length === 10) {
+        cleanPhone = '63' + cleanPhone;
+      }
+      const formattedPhone = '+' + cleanPhone;
+      const messageBody = `Ticket ${currentPatient.ticket}: Your turn for ${currentPatient.service} in 10 mins. Please proceed to waiting area.`;
+
+      const response = await fetch('http://localhost:5000/api/send-sms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          phone_number: formattedPhone,
+          message: messageBody
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error?.message || "Backend request failed");
+      }
+
+      setSmsQuota((prev: any) => ({ ...prev, balance: Math.max(0, prev.balance - 1) }));
+      alert(`SMS Alert sent to ${currentPatient.name} via Express Backend!`);
+      
+    } catch (error) {
+      console.error("Failed to send SMS:", error);
+      alert("Error sending SMS. Check your backend terminal for details.");
+    } finally {
+      setIsSendingSms(false);
+      setIsNotifyOpen(false);
+    }
+  };
 
   const smsUsed = Math.max(0, smsQuota.total - smsQuota.balance);
   const smsPercentage = Math.round((smsUsed / smsQuota.total) * 100);
@@ -349,20 +298,20 @@ export default function AdminQueue() {
                   disabled={!currentPatient}
                   className="w-full bg-sky-100 text-sky-700 hover:bg-sky-200 disabled:opacity-50 py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2"
                 >
-                  <BellRing className="w-4 h-4" /> Notify Patient <ChevronDown className="w-4 h-4" />
+                  <BellRing className="w-4 h-4" /> Notify Patient (SMS) <ChevronDown className="w-4 h-4" />
                 </button>
 
                 {isNotifyOpen && currentPatient && (
-                  <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 shadow-xl rounded-2xl overflow-hidden z-50 animate-fade-in-up divide-y divide-gray-50">
-                    <div className="p-4 bg-white border-b border-gray-50">
+                  <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 shadow-xl rounded-2xl overflow-hidden z-50 animate-fade-in-up">
+                    <div className="p-4 bg-white">
                       <div className="flex items-center justify-between mb-2">
                         <button 
-                          onClick={() => handleNotify('sms')} 
+                          onClick={handleNotifySms} 
                           disabled={isSendingSms}
                           className="flex items-center gap-2 text-sm font-semibold text-gray-800 hover:text-blue-600 transition disabled:opacity-50"
                         >
                           <MessageSquare className="w-4 h-4 text-blue-500 shrink-0" />
-                          <span>{isSendingSms ? 'Sending...' : 'Send SMS Alert'}</span>
+                          <span>{isSendingSms ? 'Sending SMS...' : 'Send SMS Alert'}</span>
                         </button>
                         <span className="text-[11px] font-bold text-blue-600">{smsQuota.balance} left</span>
                       </div>
@@ -378,39 +327,6 @@ export default function AdminQueue() {
                         <span className="text-gray-400">IPROG Quota ({smsUsed}/{smsQuota.total})</span>
                         <a 
                           href="https://www.iprogsms.com/" 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="text-dental-600 font-bold hover:underline flex items-center gap-1"
-                        >
-                          Load Credits <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="p-4 bg-white">
-                      <div className="flex items-center justify-between mb-2">
-                        <button 
-                          onClick={() => handleNotify('email')} 
-                          disabled={isSendingEmail}
-                          className="flex items-center gap-2 text-sm font-semibold text-gray-800 hover:text-dental-600 transition disabled:opacity-50"
-                        >
-                          <Mail className="w-4 h-4 text-emerald-500 shrink-0" />
-                          <span>{isSendingEmail ? 'Sending...' : 'Send Email Alert'}</span>
-                        </button>
-                        <span className="text-[11px] font-bold text-gray-500">{remainingEmailCredits} left</span>
-                      </div>
-
-                      <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mb-2">
-                        <div 
-                          className={`h-full transition-all duration-500 ${emailPercentage > 85 ? 'bg-red-500' : 'bg-emerald-500'}`} 
-                          style={{ width: `${emailPercentage}%` }}
-                        ></div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-gray-400">EmailJS Quota ({emailCredits.used}/{emailCredits.total})</span>
-                        <a 
-                          href="https://dashboard.emailjs.com/" 
                           target="_blank" 
                           rel="noreferrer" 
                           className="text-dental-600 font-bold hover:underline flex items-center gap-1"
