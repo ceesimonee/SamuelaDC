@@ -474,9 +474,9 @@ function LandingPage() {
 
               <div className="space-y-6">
                 {[
-                  { icon: MapPin, title: 'Address', lines: ['123 Centro Oriental', 'Polangui, Albay'] },
-                  { icon: Phone, title: 'Phone', lines: ['+63 (2) 8123-4567', '+63 912 345 6789'] },
-                  { icon: Mail, title: 'Email', lines: ['info@samueladentalclinic.com', 'appointments@samueladentalclinic.com'] },
+                  { icon: MapPin, title: 'Address', lines: ['2nd floor, Samson Bldg., San Juan Street, Centro Oriental, Polangui, Albay'] },
+                  { icon: Phone, title: 'Phone', lines: ['+63 938 297 8144'] },
+                  { icon: Mail, title: 'Email', lines: ['shamanesamuela143@gmail.com'] },
                   { icon: Clock, title: 'Office Hours', lines: ['Mon - Fri: 9:00 AM - 6:00 PM', 'Saturday: 9:00 AM - 1:00 PM'] },
                 ].map(({ icon: Icon, title, lines }) => (
                   <div key={title} className="flex items-start gap-4">

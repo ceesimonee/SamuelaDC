@@ -195,14 +195,14 @@ export default function Appointment() {
                     <div className="bg-dental-100 p-3 rounded-xl"><MapPin className="w-5 h-5 text-dental-600" /></div>
                     <div>
                       <h4 className="font-semibold text-gray-900 text-sm">Location</h4>
-                      <p className="text-gray-600 text-sm mt-1">123 Centro Oriental<br />Polangui, Albay</p>
+                      <p className="text-gray-600 text-sm mt-1">2nd floor, Samson Bldg., San Juan Street, Centro Oriental, Polangui, Albay</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-4">
                     <div className="bg-dental-100 p-3 rounded-xl"><Phone className="w-5 h-5 text-dental-600" /></div>
                     <div>
                       <h4 className="font-semibold text-gray-900 text-sm">Call Us Directly</h4>
-                      <p className="text-gray-600 text-sm mt-1">+63 (2) 8123-4567<br />+63 912 345 6789</p>
+                      <p className="text-gray-600 text-sm mt-1">+63 938 297 8144</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-4">
@@ -221,7 +221,7 @@ export default function Appointment() {
                   <h3 className="font-serif text-lg font-bold text-gray-900">Emergency?</h3>
                 </div>
                 <p className="text-gray-600 text-sm mb-4">If you are experiencing severe pain, bleeding, or dental trauma, please do not use this form. Call us immediately.</p>
-                <a href="tel:+639123456789" className="block w-full text-center bg-red-600 text-white font-semibold py-2.5 rounded-xl hover:bg-red-700 transition">Call +63 912 345 6789</a>
+                <a href="tel:+639382978144" className="block w-full text-center bg-red-600 text-white font-semibold py-2.5 rounded-xl hover:bg-red-700 transition">Call +63 938 297 8144</a>
               </div>
             </div>
 
