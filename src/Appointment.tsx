@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from './lib/supabaseClient'; // Keep your existing path
-import emailjs from '@emailjs/browser';
+import { supabase } from './lib/supabaseClient'; 
 import {
   Smile, ArrowLeft, MapPin, Phone, Clock,
   AlertCircle, ChevronDown, CheckCircle2, Lock, LogIn, UserCheck
@@ -67,11 +66,10 @@ export default function Appointment() {
     };
   }, []);
 
-  // ─── 2. HANDLE APPOINTMENT SUBMISSION & GMAIL NOTIFICATION ───
+  // ─── 2. HANDLE APPOINTMENT SUBMISSION & BELL NOTIFICATION ───
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Strict Security Gate: Block submission if not logged in
     if (!authenticatedUser) {
       alert('You must be signed in with a registered account to book an appointment.');
       navigate('/login');
@@ -80,10 +78,8 @@ export default function Appointment() {
 
     setIsSubmitting(true);
     
-    // Combine names to match Admin schema
     const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-
-    // Format date & time nicely for the email notification
+    
     const formattedDate = formData.date
       ? new Date(formData.date + 'T00:00:00').toLocaleDateString('en-US', {
           month: 'long',
@@ -92,10 +88,11 @@ export default function Appointment() {
         })
       : formData.date;
 
-    // 1. Insert into Supabase `appointments` table
+    // 1. Insert into Supabase `appointments` table (with user_id)
     const { error } = await supabase
       .from('appointments')
       .insert([{
+        user_id: authenticatedUser.id,
         name: fullName,
         email: formData.email,
         phone: formData.phone,
@@ -112,33 +109,16 @@ export default function Appointment() {
       return;
     }
 
-    // 2. Send Appointment Confirmation Email to User's Gmail via EmailJS
-    try {
-      await emailjs.send(
-        'service_i3xusfo',
-        'template_9b2dzwa',
-        {
-          email: formData.email,
-          name: fullName,
-          service: formData.service,
-          date: formattedDate,
-          time: formData.time,
-          phone: formData.phone,
-          notes: formData.note.trim() || 'None provided'
-        },
-        'zfhT9yUDdqKQyMJ8X'
-      );
-      console.log('✅ Appointment confirmation email sent to:', formData.email);
-    } catch (emailErr) {
-      console.error('⚠️ Failed to send appointment confirmation email:', emailErr);
-    }
+    // 2. Send "Pending" Notification to User's Bell
+    await supabase.from('notifications').insert([{
+      user_id: authenticatedUser.id,
+      message: `Your appointment request for ${formData.service} on ${formattedDate} at ${formData.time} is pending admin approval.`,
+      type: 'info'
+    }]);
 
     setIsSubmitting(false);
-
-    // Show Success Toast
     setShowToast(true);
     
-    // Redirect after 3 seconds
     setTimeout(() => {
       navigate('/');
     }, 3000);
@@ -181,7 +161,7 @@ export default function Appointment() {
           
           <div className="text-center max-w-2xl mx-auto mb-12 animate-fade-in-up">
             <h1 className="font-serif text-4xl font-bold text-gray-900 mb-4">Request an Appointment</h1>
-            <p className="text-gray-600">Please fill out the form below. Our scheduling coordinator will contact you shortly to confirm your exact appointment time.</p>
+            <p className="text-gray-600">Please fill out the form below. Our scheduling coordinator will review your request and notify you once approved.</p>
           </div>
 
           <div className="grid lg:grid-cols-3 gap-10">
@@ -239,7 +219,7 @@ export default function Appointment() {
                       Account Required to Book
                     </h3>
                     <p className="text-gray-600 max-w-md text-sm leading-relaxed mb-6">
-                      To protect patient records and send real-time confirmation alerts to your Gmail, please sign in to your registered Samuela Dental Clinic account before requesting an appointment.
+                      To protect patient records and receive status notifications in your account, please sign in to your registered Samuela Dental Clinic account before requesting an appointment.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
                       <Link
@@ -309,11 +289,11 @@ export default function Appointment() {
                           className="w-full appearance-none px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-gray-50 focus:bg-white text-gray-700 disabled:opacity-60"
                         >
                           <option value="" disabled>Select a primary service</option>
-                          <option value="General Checkup">General Checkup & Cleaning</option>
-                          <option value="Cosmetic Dentistry">Cosmetic Dentistry / Veneers</option>
-                          <option value="Dental Implants">Dental Implants</option>
-                          <option value="Orthodontics">Orthodontics / Braces</option>
-                          <option value="Pediatric">Pediatric Dentistry</option>
+                          <option value="Tooth Filling Restoration">Tooth Filling Restoration</option>
+                          <option value="Cleaning & Prophylaxis">Cleaning & Prophylaxis</option>
+                          <option value="Tooth Extraction">Tooth Extraction</option>
+                          <option value="Pit & Fissure Sealants">Pit & Fissure Sealants</option>
+                          <option value="Fluoride Application">Fluoride Application</option>
                           <option value="Other">Other / Unsure</option>
                         </select>
                         <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
@@ -360,7 +340,7 @@ export default function Appointment() {
                     type="submit"
                     className="w-full bg-dental-600 text-white font-bold py-4 rounded-xl hover:bg-dental-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg disabled:opacity-70 disabled:hover:translate-y-0"
                   >
-                    {isSubmitting ? 'Submitting & Sending Email...' : 'Submit Request'}
+                    {isSubmitting ? 'Sending Request...' : 'Submit Request'}
                   </button>
                   <p className="text-center text-xs text-gray-500 mt-4">By submitting this form, you agree to our <a href="#" className="text-dental-600 hover:underline">Privacy Policy</a>.</p>
                 </form>
@@ -374,8 +354,8 @@ export default function Appointment() {
       <div className={`fixed bottom-4 right-4 bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 ${showToast ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0'}`}>
         <CheckCircle2 className="w-6 h-6" />
         <div>
-          <h4 className="font-bold text-sm">Appointment Appointed Successfully!</h4>
-          <p className="text-xs text-green-100">Confirmation sent to {formData.email}. Redirecting...</p>
+          <h4 className="font-bold text-sm">Request Submitted!</h4>
+          <p className="text-xs text-green-100">Check your notification bell for updates. Redirecting...</p>
         </div>
       </div>
     </div>

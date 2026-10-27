@@ -26,10 +26,9 @@ import {
   Smile, ChevronDown, ArrowRight, PlayCircle, Clock,
   ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   MapPin, Phone, Mail, CheckCircle2,
-  UserCircle2, Menu, X, LogOut 
+  UserCircle2, Menu, X, LogOut, Bell
 } from 'lucide-react'
 
-// ── FIXED: All service cards now use the uniform #0c4a6e blue color ──
 const services = [
   {
     icon: ShieldPlus, label: 'Tooth Filling Restoration',
@@ -74,6 +73,12 @@ function PublicLayout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   
+  // Notifications State
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLDivElement>(null)
+
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -89,10 +94,13 @@ function PublicLayout() {
       setUser(session?.user ?? null)
     })
 
-    // 3. Handle clicking outside the profile dropdown
+    // 3. Handle clicking outside dropdowns
     const handleClickOutside = (event: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileOpen(false)
+      }
+      if (bellRef.current && !bellRef.current.contains(event.target as Node)) {
+        setBellOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -104,14 +112,74 @@ function PublicLayout() {
     }
   }, [])
 
+  // 4. Fetch and listen to notifications when user is logged in
+  useEffect(() => {
+    let channel: any;
+
+    const fetchNotifications = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (data) {
+        setNotifications(data);
+        setUnreadCount(data.filter(n => !n.is_read).length);
+      }
+    };
+
+    if (user) {
+      fetchNotifications();
+
+      // Realtime subscription for new notifications
+      channel = supabase
+        .channel('public:notifications')
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications', 
+          filter: `user_id=eq.${user.id}` 
+        }, (payload) => {
+          setNotifications(prev => [payload.new, ...prev]);
+          setUnreadCount(prev => prev + 1);
+        })
+        .subscribe();
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setProfileOpen(false)
+    setBellOpen(false)
     setMobileOpen(false)
+    setNotifications([])
+    setUnreadCount(0)
     navigate('/login')
   }
 
-  // Smart Navigation: Routes home if not there, then scrolls
+  const handleBellClick = async () => {
+    setBellOpen(!bellOpen);
+    // Mark as read when opening the dropdown
+    if (!bellOpen && unreadCount > 0 && user) {
+      setUnreadCount(0);
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+        
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    }
+  }
+
+  // Smart Navigation
   const handleNavClick = (sectionId: string) => {
     setMobileOpen(false)
     if (location.pathname !== '/') {
@@ -168,7 +236,7 @@ function PublicLayout() {
 
               <div className="flex items-center gap-4 pl-4 border-l border-gray-200">
                 
-                {/* ── PROFILE OR LOGIN BUTTON ── */}
+                {/* PROFILE BUTTON */}
                 {user ? (
                   <div className="relative" ref={profileRef}>
                     <button 
@@ -178,11 +246,9 @@ function PublicLayout() {
                       <UserCircle2 className="w-8 h-8 text-slate-500" strokeWidth={2} />
                     </button>
 
-                    {/* Minimalist Profile Dropdown Card */}
+                    {/* Profile Dropdown */}
                     {profileOpen && (
                       <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50 animate-fade-in-up">
-                        
-                        {/* Compact User Info */}
                         <div className="px-4 py-2 mb-1 border-b border-gray-50">
                           <p className="font-medium text-gray-900 text-sm truncate">
                             {user.user_metadata?.full_name || 'Patient'}
@@ -191,8 +257,6 @@ function PublicLayout() {
                             {user.email}
                           </p>
                         </div>
-                        
-                        {/* Minimalist Sign Out Button */}
                         <button 
                           onClick={handleSignOut}
                           className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 font-medium"
@@ -212,19 +276,124 @@ function PublicLayout() {
                 <Link to="/appointment" className="bg-[#0c4a6e] text-white px-6 py-2.5 rounded-full font-medium hover:bg-[#075985] transition shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform">
                   Book Appointment
                 </Link>
+
+                {/* NOTIFICATION BELL (Always visible now) */}
+                <div className="relative" ref={bellRef}>
+                  <button 
+                    onClick={handleBellClick}
+                    className="p-2 rounded-full border-2 border-transparent hover:bg-gray-100 transition-colors focus:outline-none relative"
+                  >
+                    <Bell className="w-6 h-6 text-slate-600" />
+                    {unreadCount > 0 && (
+                      <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border-2 border-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Notification Dropdown */}
+                  {bellOpen && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up">
+                      <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
+                        <h3 className="font-bold text-gray-900">Notifications</h3>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {!user ? (
+                          <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                            Please log in to view your notifications.
+                            <Link to="/login" onClick={() => setBellOpen(false)} className="block mt-2 text-[#0c4a6e] hover:underline font-bold">
+                              Go to Login
+                            </Link>
+                          </div>
+                        ) : notifications.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                            No notifications right now.
+                          </div>
+                        ) : (
+                          notifications.map(notif => (
+                            <div key={notif.id} className={`px-4 py-3 border-b border-gray-50 text-sm ${notif.is_read ? 'bg-white' : 'bg-sky-50'}`}>
+                              <div className="flex gap-3 items-start">
+                                <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
+                                  notif.type === 'success' ? 'bg-green-500' :
+                                  notif.type === 'error' ? 'bg-red-500' : 'bg-sky-500'
+                                }`} />
+                                <div>
+                                  <p className="text-gray-800 leading-snug">{notif.message}</p>
+                                  <p className="text-[11px] text-gray-400 mt-1">
+                                    {new Date(notif.created_at).toLocaleDateString()} at {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
               </div>
             </div>
 
-            {/* Mobile Hamburger */}
-            <button className="md:hidden p-2" onClick={() => setMobileOpen(o => !o)}>
-              {mobileOpen ? <X className="w-6 h-6 text-[#0c4a6e]" /> : <Menu className="w-6 h-6 text-[#0c4a6e]" />}
-            </button>
+            {/* Mobile Hamburger & Bell */}
+            <div className="md:hidden flex items-center gap-3">
+              <button onClick={handleBellClick} className="relative p-2">
+                <Bell className="w-6 h-6 text-[#0c4a6e]" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border-2 border-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              <button className="p-2" onClick={() => setMobileOpen(o => !o)}>
+                {mobileOpen ? <X className="w-6 h-6 text-[#0c4a6e]" /> : <Menu className="w-6 h-6 text-[#0c4a6e]" />}
+              </button>
+            </div>
+
           </div>
         </div>
 
+        {/* Mobile Notification Dropdown (Shows if bell clicked on mobile) */}
+        {bellOpen && (
+          <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg max-h-80 overflow-y-auto z-50">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900">
+              Notifications
+            </div>
+            {!user ? (
+              <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                Please log in to view your notifications.
+                <Link to="/login" onClick={() => setBellOpen(false)} className="block mt-2 text-[#0c4a6e] hover:underline font-bold">
+                  Go to Login
+                </Link>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                No notifications right now.
+              </div>
+            ) : (
+              notifications.map(notif => (
+                <div key={notif.id} className={`px-4 py-3 border-b border-gray-50 text-sm ${notif.is_read ? 'bg-white' : 'bg-sky-50'}`}>
+                  <div className="flex gap-3 items-start">
+                    <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
+                      notif.type === 'success' ? 'bg-green-500' :
+                      notif.type === 'error' ? 'bg-red-500' : 'bg-sky-500'
+                    }`} />
+                    <div>
+                      <p className="text-gray-800 leading-snug">{notif.message}</p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {new Date(notif.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
         {/* Mobile Menu */}
-        {mobileOpen && (
-          <div className="md:hidden bg-white border-t">
+        {mobileOpen && !bellOpen && (
+          <div className="md:hidden bg-white border-t z-40 relative">
             <div className="px-4 pt-2 pb-6 space-y-2">
               <button onClick={() => handleNavClick('home')} className="block w-full text-left px-3 py-2 text-gray-700 hover:bg-sky-50 rounded-md">Home</button>
               <div>
@@ -394,7 +563,6 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* Blue Section left blank as requested */}
       <section className="bg-[#0c4a6e] py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="min-h-[60px]"></div>
@@ -538,7 +706,6 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* All these routes share the Public Navbar and Footer! */}
         <Route element={<PublicLayout />}>
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<About />} /> 
@@ -549,11 +716,9 @@ export default function App() {
           <Route path="/services/fluoride" element={<Fluoride />} />
         </Route>
         
-        {/* Un-layouted utility routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/appointment" element={<Appointment />} />
         
-        {/* Admin Layout Routes */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
           <Route path="appointments" element={<AdminAppointments />} />

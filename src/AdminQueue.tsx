@@ -39,15 +39,18 @@ export default function AdminQueue() {
   const [modalTab, setModalTab] = useState<'appointments' | 'manual'>('appointments');
   const [weekAppointments, setWeekAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(false);
+  
+  // Track selected appointment from the dropdown
+  const [selectedAptId, setSelectedAptId] = useState<string>('');
 
-  const [manualForm, setManualForm] = useState({ name: '', phone: '', email: '', service: 'General Checkup' });
+  // Removed email from manual form state
+  const [manualForm, setManualForm] = useState({ name: '', phone: '', service: 'General Checkup' });
   const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
   const [isNotifyOpen, setIsNotifyOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
 
-  // Default synced to your current IPROG dashboard (188 left / 202 total)
   const [smsQuota, setSmsQuota] = useState({ balance: 188, total: 202 });
 
   useEffect(() => {
@@ -117,6 +120,7 @@ export default function AdminQueue() {
   const handleOpenModal = () => {
     setIsModalOpen(true);
     setModalTab('appointments');
+    setSelectedAptId(''); 
     fetchWeekAppointments();
   };
 
@@ -151,7 +155,6 @@ export default function AdminQueue() {
       name: manualForm.name,
       service: manualForm.service,
       phone: manualForm.phone,
-      email: manualForm.email,
       time: 'Just arrived',
       status: 'waiting',
       isWalkin: true
@@ -159,7 +162,7 @@ export default function AdminQueue() {
 
     if (!error) {
       setIsModalOpen(false);
-      setManualForm({ name: '', phone: '', email: '', service: 'General Checkup' }); 
+      setManualForm({ name: '', phone: '', service: 'General Checkup' }); 
       fetchQueue();
     } else {
       alert("Failed to add manual walk-in.");
@@ -231,7 +234,6 @@ export default function AdminQueue() {
         throw new Error(result.error?.message || "Backend request failed");
       }
 
-      // Calculate new balance and save permanently to Supabase
       const newBalance = Math.max(0, smsQuota.balance - 1);
       setSmsQuota(prev => ({ ...prev, balance: newBalance }));
 
@@ -253,6 +255,11 @@ export default function AdminQueue() {
 
   const smsUsed = Math.max(0, smsQuota.total - smsQuota.balance);
   const smsPercentage = Math.round((smsUsed / smsQuota.total) * 100);
+
+  // Filter out appointments that are already in the waiting queue or currently being served
+  const availableAppointments = weekAppointments.filter(
+    apt => !queue.some(q => q.name === apt.name) && currentPatient?.name !== apt.name
+  );
 
   return (
     <div className="fade-in">
@@ -446,36 +453,57 @@ export default function AdminQueue() {
             </div>
             
             <div className="p-5 overflow-y-auto bg-gray-50/50 flex-grow">
+              
+              {/* ── DROPDOWN TAB ── */}
               {modalTab === 'appointments' && (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Select a scheduled appointment</p>
-                  {loadingAppointments ? (
-                    <p className="text-center py-6 text-sm text-gray-400">Loading appointments...</p>
-                  ) : weekAppointments.length === 0 ? (
-                    <p className="text-center py-6 text-sm text-gray-400">No appointments scheduled for this week.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {weekAppointments.map(apt => (
-                        <button 
-                          key={apt.id}
-                          onClick={() => addAppointmentToQueue(apt)}
-                          className="w-full text-left bg-white p-3.5 rounded-lg border border-gray-200 hover:border-dental-500 hover:shadow-sm transition flex justify-between items-center group"
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wider">Select Scheduled Patient</label>
+                    {loadingAppointments ? (
+                      <p className="text-sm text-gray-400">Loading appointments...</p>
+                    ) : availableAppointments.length === 0 ? (
+                      <p className="text-sm text-gray-400">No available appointments to queue.</p>
+                    ) : (
+                      <div className="relative">
+                        <select
+                          value={selectedAptId}
+                          onChange={(e) => setSelectedAptId(e.target.value)}
+                          className="w-full appearance-none px-3 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-white text-sm text-gray-700"
                         >
-                          <div>
-                            <p className="font-semibold text-sm text-gray-900 group-hover:text-dental-600 transition">{apt.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{apt.service}</p>
-                          </div>
-                          <div className="text-right text-xs text-gray-500">
-                            <p>{new Date(apt.appointment_date).toLocaleDateString()}</p>
-                            <p className="font-medium text-gray-700">{apt.appointment_time}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                          <option value="" disabled>-- Select an appointment --</option>
+                          {availableAppointments.map((apt) => (
+                            <option key={apt.id} value={apt.id}>
+                              {apt.name} - {apt.service} ({apt.appointment_time})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
+                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      const apt = availableAppointments.find(a => a.id.toString() === selectedAptId.toString());
+                      if (apt) {
+                        // Double check confirmation
+                        if (window.confirm(`Are you sure you want to add ${apt.name} to the live queue?`)) {
+                          addAppointmentToQueue(apt);
+                          setSelectedAptId(''); // Reset dropdown for next time
+                        }
+                      }
+                    }}
+                    disabled={!selectedAptId || availableAppointments.length === 0}
+                    className="w-full bg-dental-600 text-white text-sm font-bold py-2.5 rounded-lg hover:bg-dental-700 transition disabled:opacity-50 shadow-sm"
+                  >
+                    Confirm & Add to Queue
+                  </button>
                 </div>
               )}
 
+              {/* ── MANUAL ENTRY (Email Removed) ── */}
               {modalTab === 'manual' && (
                 <form onSubmit={handleManualSubmit} className="space-y-3.5">
                   <div>
@@ -500,16 +528,6 @@ export default function AdminQueue() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wider">Email Address</label>
-                    <input 
-                      type="email" 
-                      value={manualForm.email}
-                      onChange={e => setManualForm({...manualForm, email: e.target.value})}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-white text-sm" 
-                      placeholder="e.g. patient@gmail.com" 
-                    />
-                  </div>
-                  <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wider">Requested Service</label>
                     <select 
                       value={manualForm.service}
@@ -525,7 +543,7 @@ export default function AdminQueue() {
                   <button 
                     type="submit" 
                     disabled={isSubmittingManual}
-                    className="w-full mt-2 bg-dental-600 text-white text-sm font-bold py-2.5 rounded-lg hover:bg-dental-700 transition disabled:opacity-70 shadow-sm"
+                    className="w-full mt-4 bg-dental-600 text-white text-sm font-bold py-2.5 rounded-lg hover:bg-dental-700 transition disabled:opacity-70 shadow-sm"
                   >
                     {isSubmittingManual ? 'Adding...' : 'Add to Queue'}
                   </button>

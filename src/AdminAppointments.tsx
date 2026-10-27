@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase'; // Adjust path if needed
+import emailjs from '@emailjs/browser';
 import {
   Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight,
   Check, X, User, Activity, Clock, Mail, Phone
 } from 'lucide-react';
 
-// 1. Updated Types to include the time data fetching from Supabase
 type Appointment = {
   id: number;
+  user_id?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -19,6 +20,7 @@ type Appointment = {
 
 type Request = {
   id: number;
+  user_id?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -38,12 +40,11 @@ export default function AdminAppointments() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ─── NEW STATE FOR DAY DETAILS MODAL ───
+  // ─── MODAL STATE ───
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<Appointment[]>([]);
   const [isDayDetailsModalOpen, setIsDayDetailsModalOpen] = useState(false);
   const [selectedDateTitle, setSelectedDateTitle] = useState("");
 
-  // ─── FETCH DATA FROM SUPABASE ───
   useEffect(() => {
     fetchAppointments();
   }, []);
@@ -67,23 +68,25 @@ export default function AdminAppointments() {
       if (row.status === 'confirmed') {
         confirmedList.push({
           id: row.id,
+          user_id: row.user_id,
           name: row.name,
           email: row.email,
           phone: row.phone,
           service: row.service,
           date: parsedDate,
-          time: row.appointment_time, // Retrieve time
+          time: row.appointment_time,
           note: row.note
         });
       } else if (row.status === 'pending') {
         pendingList.push({
           id: row.id,
+          user_id: row.user_id,
           name: row.name,
           email: row.email,
           phone: row.phone,
           service: row.service,
           dateStr: parsedDate.toLocaleDateString(),
-          time: row.appointment_time, // Retrieve time
+          time: row.appointment_time,
           note: row.note,
           targetDate: parsedDate
         });
@@ -118,11 +121,8 @@ export default function AdminAppointments() {
     );
   };
 
-  // ─── CLICK HANDLER FOR CALENDAR DAYS ───
   const handleDayClick = (day: number) => {
     const dayAppointments = getAppointmentsForDay(day);
-    
-    // Only open the modal if there are actually appointments that day
     if (dayAppointments.length > 0) {
       setSelectedDateAppointments(dayAppointments);
       setSelectedDateTitle(`${currentDate.toLocaleString('default', { month: 'long' })} ${day}, ${year}`);
@@ -130,8 +130,9 @@ export default function AdminAppointments() {
     }
   };
 
-  // ─── DATABASE ACTIONS ───
+  // ─── ADMIN ACTIONS (Confirm / Decline) ───
   const handleConfirm = async (req: Request) => {
+    // 1. Update Database
     const { error } = await supabase
       .from('appointments')
       .update({ status: 'confirmed' })
@@ -140,6 +141,7 @@ export default function AdminAppointments() {
     if (!error) {
       setAppointments([...appointments, {
         id: req.id,
+        user_id: req.user_id,
         name: req.name,
         email: req.email,
         phone: req.phone,
@@ -149,19 +151,63 @@ export default function AdminAppointments() {
         note: req.note
       }]);
       setRequests(prev => prev.filter(r => r.id !== req.id));
+
+      const formattedDate = req.targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      // 2. Send Notification to User's Bell
+      if (req.user_id) {
+        await supabase.from('notifications').insert([{
+          user_id: req.user_id,
+          message: `Great news! Your appointment for ${req.service} on ${formattedDate} at ${req.time} has been approved.`,
+          type: 'success'
+        }]);
+      }
+
+      // 3. Send Email Confirmation via EmailJS
+      if (req.email) {
+        try {
+          await emailjs.send(
+            'service_i3xusfo',
+            'template_9b2dzwa',
+            {
+              email: req.email,
+              name: req.name,
+              service: req.service,
+              date: formattedDate,
+              time: req.time || '',
+              phone: req.phone || '',
+              notes: req.note || 'None provided'
+            },
+            'zfhT9yUDdqKQyMJ8X'
+          );
+        } catch (emailErr) {
+          console.error('Failed to send confirmation email:', emailErr);
+        }
+      }
     } else {
       alert("Error confirming: " + error.message);
     }
   };
 
-  const handleDecline = async (id: number) => {
+  const handleDecline = async (req: Request) => {
     const { error } = await supabase
       .from('appointments')
       .delete()
-      .eq('id', id);
+      .eq('id', req.id);
 
     if (!error) {
-      setRequests(prev => prev.filter(req => req.id !== id));
+      setRequests(prev => prev.filter(r => r.id !== req.id));
+      
+      const formattedDate = req.targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      // Send Denial Notification to User's Bell
+      if (req.user_id) {
+        await supabase.from('notifications').insert([{
+          user_id: req.user_id,
+          message: `Sorry, your appointment request for ${req.service} on ${formattedDate} at ${req.time} was declined. Please book another slot.`,
+          type: 'error'
+        }]);
+      }
     } else {
       alert("Error declining: " + error.message);
     }
@@ -177,7 +223,7 @@ export default function AdminAppointments() {
         name: newEntryForm.name,
         service: newEntryForm.service || 'General Consultation',
         appointment_date: newEntryForm.date,
-        appointment_time: newEntryForm.time, // Save new manual time
+        appointment_time: newEntryForm.time,
         status: 'confirmed'
       }])
       .select()
@@ -274,7 +320,6 @@ export default function AdminAppointments() {
                     ${hasAppointments ? 'cursor-pointer hover:bg-gray-50' : ''}`
                   }
                 >
-                  
                   <span className={`font-medium text-xs sm:text-sm w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-dental-600 text-white shadow-sm' : 'text-gray-700'}`}>
                     {day}
                   </span>
@@ -336,7 +381,7 @@ export default function AdminAppointments() {
                         <Check className="w-4 h-4" /> Confirm
                       </button>
                       <button
-                        onClick={() => handleDecline(req.id)}
+                        onClick={() => handleDecline(req)}
                         className="flex-1 bg-red-50 text-red-600 hover:bg-red-100 py-2 rounded-lg text-xs font-bold transition flex justify-center items-center gap-1"
                       >
                         <X className="w-4 h-4" /> Decline
@@ -348,7 +393,7 @@ export default function AdminAppointments() {
         </div>
       </div>
 
-      {/* ── Day Details Modal (NEW) ── */}
+      {/* ── Day Details Modal ── */}
       {isDayDetailsModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
@@ -398,7 +443,7 @@ export default function AdminAppointments() {
         </div>
       )}
 
-      {/* ── New Entry Modal (Existing) ── */}
+      {/* ── New Entry Modal ── */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -454,7 +499,6 @@ export default function AdminAppointments() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
