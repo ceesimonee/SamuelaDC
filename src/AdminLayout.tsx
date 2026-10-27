@@ -33,7 +33,7 @@ export default function AdminLayout() {
                 <Smile className="w-8 h-8 text-white" />
               </div>
               <div>
-                <span className="font-serif text-2xl font-bold text-dental-900 leading-none">Samuela Dental</span>
+                <span className="font-serif text-2xl font-bold text-dental-900 leading-none">Samuela Dental Clinic</span>
                 <p className="text-[10px] text-dental-600 tracking-[0.2em] font-bold mt-0.5">ADMIN PORTAL</p>
               </div>
             </div>
