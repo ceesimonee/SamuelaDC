@@ -10,7 +10,7 @@ import {
 
 // ─── IMPORT IMAGES HERE FOR VERCEL DEPLOYMENT ───
 import clinicImg from './imports/CLINIC.jfif';
-import docImg from './imports/DOC.jpg'; // Change to .jfif if your file is DOC.jfif
+import docImg from './imports/doc.jpg'; // Change to .jfif if your file is DOC.jfif
 
 export default function About() {
   return (
