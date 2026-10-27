@@ -79,8 +79,34 @@ export default function AdminLayout() {
         {mobileMenuOpen && (
           <div className="lg:hidden bg-white border-t border-gray-100 shadow-lg">
             <div className="px-4 pt-2 pb-6 space-y-2">
-              <Link to="/admin" className="block w-full text-left px-3 py-3 text-gray-700 hover:bg-dental-50 hover:text-dental-600 rounded-md font-medium">Dashboard</Link>
-              <Link to="/admin/appointments" className="block w-full text-left px-3 py-3 text-gray-700 hover:bg-dental-50 hover:text-dental-600 rounded-md font-medium">Schedule</Link>
+              <Link 
+                to="/admin" 
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}
+              >
+                Dashboard
+              </Link>
+              <Link 
+                to="/admin/appointments" 
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/appointments') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}
+              >
+                Schedule
+              </Link>
+              <Link 
+                to="/admin/queue" 
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-2 w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/queue') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}
+              >
+                Queue <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">LIVE</span>
+              </Link>
+              <Link 
+                to="/admin/patients" 
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/patients') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}
+              >
+                Records
+              </Link>
               <div className="border-t border-gray-100 pt-4 mt-2">
                 <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-3 text-red-600 hover:bg-red-50 rounded-md font-medium">
                   <LogOut className="w-5 h-5" /> Log Out

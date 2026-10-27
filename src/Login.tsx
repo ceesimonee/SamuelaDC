@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Smile, Mail, Lock, User, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Smile, Mail, Lock, User, AlertCircle, CheckCircle2, Eye, EyeOff, ShieldCheck, CalendarCheck, Clock } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { GoogleLogin } from '@react-oauth/google';
 import emailjs from '@emailjs/browser';
@@ -8,6 +8,8 @@ import emailjs from '@emailjs/browser';
 export default function Login() {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false); // NEW: Detects if user clicked email reset link
   
   // Form Inputs
   const [email, setEmail] = useState('');
@@ -20,7 +22,30 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Helper: Send Welcome Email to User's Gmail
+  // ─── CHECK FOR PASSWORD RECOVERY LINK ON LOAD ───
+  useEffect(() => {
+    // Listen for the password recovery event triggered by clicking the email link
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+        setIsForgotPassword(false);
+        setIsLogin(false);
+      }
+    });
+
+    // Fallback URL hash check
+    if (window.location.hash.includes('type=recovery')) {
+      setIsRecoveryMode(true);
+      setIsForgotPassword(false);
+      setIsLogin(false);
+    }
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // ─── HELPER: Send Welcome Email to User's Gmail ───
   const sendWelcomeEmail = async (targetEmail: string, targetName: string) => {
     try {
       await emailjs.send(
@@ -37,13 +62,12 @@ export default function Login() {
         },
         'zfhT9yUDdqKQyMJ8X'  
       );
-      console.log("✅ Welcome email sent to:", targetEmail);
     } catch (emailError) {
       console.error("⚠️ Failed to send welcome email via EmailJS:", emailError);
     }
   };
 
-  // Helper: Track & Verify Registered Accounts Locally + via Supabase Profiles
+  // ─── HELPER: Track & Verify Registered Accounts Locally ───
   const markEmailAsRegistered = (userEmail: string) => {
     const clean = userEmail.trim().toLowerCase();
     const list: string[] = JSON.parse(localStorage.getItem('samuela_registered_emails') || '[]');
@@ -61,17 +85,12 @@ export default function Login() {
 
   // ─── STRICT ROUTING & ROLE CHECK HELPER ───
   const routeUser = async (userId: string, userEmail?: string) => {
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', userId)
       .maybeSingle();
 
-    if (profileError) {
-      console.warn("Profile lookup warning:", profileError.message);
-    }
-
-    // Save email to verified list so future logins are recognized
     if (userEmail) {
       markEmailAsRegistered(userEmail);
     }
@@ -83,7 +102,7 @@ export default function Login() {
     }
   };
 
-  // ─── GOOGLE AUTH HANDLER (STRICT SIGN-UP VS SIGN-IN) ───
+  // ─── GOOGLE AUTH HANDLER ───
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
     setErrorMsg('');
@@ -96,66 +115,52 @@ export default function Login() {
       });
 
       if (error) throw error;
-      if (!data.user) {
-        throw new Error('Could not retrieve Google account details.');
-      }
-
+      
       const gUser = data.user;
-      if (!gUser.email) {
-        throw new Error('Google account email is missing.');
+      
+      if (!gUser || !gUser.email) {
+        throw new Error('Could not retrieve Google account details.');
       }
 
       const gEmail = gUser.email.toLowerCase();
       const gName = gUser.user_metadata?.full_name || gUser.user_metadata?.name || 'Patient';
 
-      // Check if user already exists in the `profiles` table
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id, role')
         .eq('id', gUser.id)
         .maybeSingle();
 
-      // Check if Google account was just created within the last 20 seconds
       const isNewlyCreatedAuth = new Date(gUser.created_at).getTime() > Date.now() - 20000;
       const isAlreadyRegistered = Boolean(existingProfile) || isEmailRegisteredLocally(gEmail);
 
-      // CASE 1: User is on the "Create Account" (Sign Up) tab
+      // SIGN UP
       if (!isLogin) {
         if (!existingProfile) {
-          await supabase.from('profiles').upsert([
-            { id: gUser.id, role: 'patient' }
-          ]).select();
+          await supabase.from('profiles').upsert([{ id: gUser.id, role: 'patient' }]);
         }
-
         markEmailAsRegistered(gEmail);
-
-        // Send Gmail confirmation via EmailJS
         await sendWelcomeEmail(gEmail, gName);
-
-        // Sign out immediately so they see the confirmation message and log in properly
         await supabase.auth.signOut();
         setIsLogin(true);
-        setSuccessMsg(`You registered successfully with Google (${gEmail})! A confirmation email has been sent to your Gmail. Please sign in below.`);
+        setSuccessMsg(`Registration successful! A confirmation email was sent to ${gEmail}. Please sign in below.`);
         return;
       }
 
-      // CASE 2: User is on the "Welcome Back" (Sign In) tab
+      // SIGN IN
       if (isLogin) {
         if (isNewlyCreatedAuth && !isEmailRegisteredLocally(gEmail) && existingProfile?.role !== 'admin') {
           await supabase.auth.signOut();
-          setErrorMsg('This Google account is not registered yet. Please click "Sign up" below to create an account first.');
+          setErrorMsg('Account not registered yet. Please click "Register here" to create an account first.');
           return;
         }
-
         if (!isAlreadyRegistered && existingProfile?.role !== 'admin') {
           await supabase.auth.signOut();
-          setErrorMsg('Account not found. Only registered accounts can sign in. Please sign up first.');
+          setErrorMsg('Account not found. Only registered accounts can sign in.');
           return;
         }
-
         await routeUser(gUser.id, gEmail);
       }
-
     } catch (error: any) {
       setErrorMsg(error.message || 'Google authentication failed.');
     } finally {
@@ -174,64 +179,40 @@ export default function Login() {
 
     try {
       if (isLogin) {
-        // 1. STRICT LOGIN: Verify credentials with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         });
-
-        if (authError) {
-          throw new Error('Invalid email or password. Please make sure your account is registered.');
-        }
-
-        if (!authData.user) {
-          throw new Error('Sign in failed. Account not found.');
-        }
-
-        // 2. Route Admin to /admin and Registered Patient to /
+        if (authError) throw new Error('Invalid email or password. Please make sure your account is registered.');
+        if (!authData.user) throw new Error('Sign in failed. Account not found.');
+        
         await routeUser(authData.user.id, cleanEmail);
         
       } else {
-        // 1. SIGN UP: Validate inputs
-        if (password.length < 6) {
-          throw new Error('Password must be at least 6 characters long.');
-        }
+        if (password.length < 6) throw new Error('Password must be at least 6 characters long.');
 
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
-          options: {
-            data: { full_name: fullName.trim() }
-          }
+          options: { data: { full_name: fullName.trim() } }
         });
 
         if (error) throw error;
-
-        // Anti-Duplicate Check: If identities array is empty, the email is already registered
         if (data.user && data.user.identities && data.user.identities.length === 0) {
           throw new Error('This email is already registered. Please sign in instead.');
         }
 
-        // Save profile row in Supabase if table allows it
         if (data.user) {
-          await supabase.from('profiles').upsert([
-            { id: data.user.id, role: 'patient' }
-          ]);
+          await supabase.from('profiles').upsert([{ id: data.user.id, role: 'patient' }]);
         }
 
-        // Mark as registered
         markEmailAsRegistered(cleanEmail);
-        
-        // 2. SEND WELCOME EMAIL TO USER'S GMAIL
         await sendWelcomeEmail(cleanEmail, fullName.trim());
-
-        // 3. Sign out any auto-session so they must log in on the Sign In view
         await supabase.auth.signOut();
         
-        // 4. Show On-Screen Success Banner & Switch to Sign In view
         setIsLogin(true);
         setPassword('');
-        setSuccessMsg(`You registered successfully! A confirmation email has been sent to ${cleanEmail}. You may now sign in.`);
+        setSuccessMsg(`Registration successful! A confirmation email has been sent to ${cleanEmail}. You may now sign in.`);
       }
     } catch (error: any) {
       setErrorMsg(error.message || 'Authentication error occurred.');
@@ -240,172 +221,330 @@ export default function Login() {
     }
   };
 
+  // ─── SEND FORGOT PASSWORD EMAIL ───
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setErrorMsg('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/login`, 
+      });
+
+      if (error) throw error;
+      setSuccessMsg(`A password reset link has been sent to ${email}. Please check your inbox.`);
+    } catch (error: any) {
+      setErrorMsg(error.message || 'Failed to send reset link.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── UPDATE NEW PASSWORD AFTER CLICKING LINK ───
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      setSuccessMsg('Password updated successfully! Redirecting...');
+      setTimeout(async () => {
+        setIsRecoveryMode(false);
+        setIsLogin(true);
+        setPassword('');
+        // Route user automatically since they are logged in after updating password
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          routeUser(user.id);
+        } else {
+          navigate('/');
+        }
+      }, 2000);
+    } catch (error: any) {
+      setErrorMsg(error.message || 'Failed to update password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="font-sans text-gray-800 antialiased hero-gradient min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen flex flex-col lg:flex-row font-sans bg-gray-50 overflow-hidden relative">
       
-      {/* Background Blobs */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-dental-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse-slow"></div>
-      <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow" style={{ animationDelay: '2s' }}></div>
-
-      <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl max-w-md w-full p-8 sm:p-10 relative z-10 animate-fade-in-up border border-white">
-        
-        <Link to="/" className="absolute top-6 left-6 text-gray-400 hover:text-dental-600 transition flex items-center gap-1 text-sm font-medium">
-          <ArrowLeft className="w-4 h-4" /> Back
+      {/* ── GLOBAL BACK TO HOME BUTTON (Top Left) ── */}
+      <div className="absolute top-6 left-6 z-50">
+        <Link 
+          to="/" 
+          className="text-gray-500 lg:text-sky-100 hover:text-[#0c4a6e] lg:hover:text-white font-medium flex items-center gap-2 transition-colors bg-white/80 lg:bg-transparent p-2 lg:p-0 rounded-lg lg:rounded-none shadow-sm lg:shadow-none"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Home
         </Link>
+      </div>
 
-        {/* Header */}
-        <div className="text-center mt-6 mb-6">
-          <div className="bg-dental-600 w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-dental-600/30 transform rotate-3">
-            <Smile className="w-6 h-6 text-white" />
-          </div>
-          <h2 className="font-serif text-3xl font-bold text-gray-900">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
-          </h2>
-          <p className="text-gray-500 mt-2 text-sm">
-            {isLogin ? 'Sign in to access your portal.' : 'Join us to manage your appointments.'}
+      {/* ── LEFT PANEL (BRANDING INSPIRATION) ── */}
+      <div className="hidden lg:flex lg:w-[45%] xl:w-[50%] bg-[#0c4a6e] relative flex-col justify-center px-12 xl:px-20 text-white overflow-hidden">
+        {/* Abstract Background Elements */}
+        <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-[#0284c7] rounded-full mix-blend-multiply filter blur-[80px] opacity-60 transform translate-x-1/3 -translate-y-1/3"></div>
+        <div className="absolute bottom-0 left-0 w-[30rem] h-[30rem] bg-emerald-500 rounded-full mix-blend-multiply filter blur-[80px] opacity-20 transform -translate-x-1/3 translate-y-1/3"></div>
+        
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(#ffffff 1px, transparent 1px), linear-gradient(90deg, #ffffff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+
+        <div className="relative z-10">
+          <Link to="/" className="flex items-center gap-3 mb-12 hover:opacity-80 transition-opacity w-fit mt-8">
+            <div className="bg-white p-2.5 rounded-full shadow-lg">
+              <Smile className="w-8 h-8 text-[#0c4a6e]" />
+            </div>
+            <span className="font-serif text-3xl font-bold tracking-tight">Samuela Dental</span>
+          </Link>
+
+          <h1 className="text-4xl xl:text-5xl font-serif font-bold leading-tight mb-6 text-white">
+            Your dental health, <br />in one secure portal.
+          </h1>
+          <p className="text-sky-100 text-lg max-w-md leading-relaxed mb-12">
+            Patients can seamlessly book appointments, review clinical records, and stay connected with our experts—without leaving the platform.
           </p>
-        </div>
 
-        {/* On-Screen Registration Success Banner */}
-        {successMsg && (
-          <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl flex items-start gap-3 mb-6 text-sm font-medium animate-fade-in-up border border-emerald-200 shadow-sm">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-emerald-900">Registration Successful!</p>
-              <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">{successMsg}</p>
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 text-sky-50">
+              <div className="bg-sky-500/20 p-3 rounded-xl"><CalendarCheck className="w-6 h-6 text-sky-300" /></div>
+              <span className="font-medium text-lg">Instant Appointment Booking</span>
+            </div>
+            <div className="flex items-center gap-4 text-sky-50">
+              <div className="bg-sky-500/20 p-3 rounded-xl"><ShieldCheck className="w-6 h-6 text-sky-300" /></div>
+              <span className="font-medium text-lg">Secure Clinical Records</span>
+            </div>
+            <div className="flex items-center gap-4 text-sky-50">
+              <div className="bg-sky-500/20 p-3 rounded-xl"><Clock className="w-6 h-6 text-sky-300" /></div>
+              <span className="font-medium text-lg">Real-time Queue Updates</span>
             </div>
           </div>
-        )}
-
-        {/* Error Message Banner */}
-        {errorMsg && (
-          <div className="bg-red-50 text-red-600 p-3.5 rounded-xl flex items-center gap-2.5 mb-6 text-sm font-medium animate-fade-in-up border border-red-100">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {/* Google Authentication - Cleanly Centered */}
-        <div className="mb-6 flex justify-center w-full">
-          <GoogleLogin
-            onSuccess={handleGoogleSuccess}
-            onError={() => setErrorMsg('Google sign-in was closed or failed.')}
-            theme="outline"
-            size="large"
-            text={isLogin ? 'signin_with' : 'signup_with'}
-            shape="rectangular"
-            logo_alignment="center"
-          />
         </div>
+      </div>
 
-        {/* Divider */}
-        <div className="relative flex items-center mb-6">
-          <div className="flex-grow border-t border-gray-200"></div>
-          <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium uppercase tracking-wider">
-            Or continue with email
-          </span>
-          <div className="flex-grow border-t border-gray-200"></div>
-        </div>
-        
-        {/* Email Form */}
-        <form className="space-y-4 block animate-fade-in-up" onSubmit={handleSubmit}>
+      {/* ── RIGHT PANEL (LOGIN FORM) ── */}
+      <div className="w-full lg:w-[55%] xl:w-[50%] flex items-center justify-center p-6 sm:p-12 relative min-h-screen lg:min-h-0 pt-20 lg:pt-0">
+
+        <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8 sm:p-10 border border-gray-100 relative z-10 animate-fade-in-up">
           
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="w-5 h-5 text-gray-400" />
+          <div className="mb-8">
+            <h2 className="font-serif text-3xl font-bold text-gray-900 mb-2">
+              {isRecoveryMode ? 'Set New Password' : isForgotPassword ? 'Reset Password' : (isLogin ? 'Sign in' : 'Create Account')}
+            </h2>
+            <p className="text-gray-500 text-sm">
+              {isRecoveryMode
+                ? 'Enter your new secure password below.'
+                : isForgotPassword 
+                  ? 'Enter your email to receive a reset link.' 
+                  : (isLogin ? 'Use your registered email and credentials.' : 'Join us to manage your dental appointments.')}
+            </p>
+          </div>
+
+          {/* Alerts */}
+          {successMsg && (
+            <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl flex items-start gap-3 mb-6 text-sm font-medium animate-fade-in-up border border-emerald-200">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">{successMsg}</p>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="bg-red-50 text-red-600 p-3.5 rounded-xl flex items-center gap-2.5 mb-6 text-sm font-medium animate-fade-in-up border border-red-100">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* ── SET NEW PASSWORD FORM (AFTER CLICKING EMAIL LINK) ── */}
+          {isRecoveryMode ? (
+            <form onSubmit={handleUpdatePassword} className="space-y-5 animate-fade-in-up">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">New Password</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Lock className="w-5 h-5 text-gray-400" />
+                  </div>
+                  <input 
+                    type={showPassword ? "text" : "password"} required 
+                    value={password} onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-12 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#0c4a6e] outline-none transition bg-gray-50 focus:bg-white text-sm" 
+                    placeholder="Enter new password" 
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
-                <input 
-                  type="text" 
-                  required 
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 focus:border-transparent outline-none transition bg-gray-50 focus:bg-white text-sm" 
-                  placeholder="Juan Dela Cruz" 
+              </div>
+
+              <button disabled={loading} type="submit" className="w-full bg-[#0c4a6e] text-white font-bold py-3.5 rounded-xl hover:bg-[#075985] transition shadow-lg shadow-[#0c4a6e]/20 mt-2 disabled:opacity-70">
+                {loading ? 'Saving...' : 'Save New Password'}
+              </button>
+            </form>
+          ) : isForgotPassword ? (
+            /* ── SEND RESET LINK FORM ── */
+            <form onSubmit={handleResetPassword} className="space-y-5 animate-fade-in-up">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Mail className="w-5 h-5 text-gray-400" />
+                  </div>
+                  <input 
+                    type="email" required 
+                    value={email} onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#0c4a6e] outline-none transition bg-gray-50 focus:bg-white text-sm" 
+                    placeholder="Enter your registered email" 
+                  />
+                </div>
+              </div>
+
+              <button disabled={loading} type="submit" className="w-full bg-[#0c4a6e] text-white font-bold py-3.5 rounded-xl hover:bg-[#075985] transition shadow-lg shadow-[#0c4a6e]/20 mt-2 disabled:opacity-70">
+                {loading ? 'Sending link...' : 'Send Reset Link'}
+              </button>
+
+              <button 
+                type="button" 
+                onClick={() => { setIsForgotPassword(false); setErrorMsg(''); setSuccessMsg(''); }}
+                className="w-full text-center text-sm text-[#0284c7] font-semibold hover:underline mt-4"
+              >
+                Back to sign in
+              </button>
+            </form>
+
+          ) : (
+            /* ── STANDARD LOGIN/SIGNUP FORM ── */
+            <>
+              <form className="space-y-5" onSubmit={handleSubmit}>
+                {!isLogin && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <User className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <input 
+                        type="text" required 
+                        value={fullName} onChange={(e) => setFullName(e.target.value)}
+                        className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#0c4a6e] outline-none transition bg-gray-50 focus:bg-white text-sm" 
+                        placeholder="Juan Dela Cruz" 
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Mail className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <input 
+                      type="email" required 
+                      value={email} onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#0c4a6e] outline-none transition bg-gray-50 focus:bg-white text-sm" 
+                      placeholder="you@email.com" 
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-sm font-semibold text-gray-700">Password</label>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Lock className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <input 
+                      type={showPassword ? "text" : "password"} required 
+                      value={password} onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-11 pr-12 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#0c4a6e] outline-none transition bg-gray-50 focus:bg-white text-sm" 
+                      placeholder={isLogin ? "••••••••" : "Create a strong password"} 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {isLogin && (
+                  <div className="flex items-center justify-between mt-2 mb-4">
+                    <div className="flex items-center">
+                      <input 
+                        id="remember-me" type="checkbox" 
+                        className="h-4 w-4 text-[#0c4a6e] focus:ring-[#0c4a6e] border-gray-300 rounded cursor-pointer" 
+                      />
+                      <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-600 cursor-pointer">
+                        Remember me
+                      </label>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => { setIsForgotPassword(true); setErrorMsg(''); setSuccessMsg(''); }}
+                      className="text-sm text-[#0284c7] font-semibold hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+
+                <button disabled={loading} type="submit" className="w-full bg-[#0c4a6e] text-white font-bold py-3.5 rounded-xl hover:bg-[#075985] transition shadow-lg shadow-[#0c4a6e]/20 mt-2 disabled:opacity-70 disabled:cursor-not-allowed">
+                  {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+                </button>
+              </form>
+
+              <div className="relative flex items-center my-7">
+                <div className="flex-grow border-t border-gray-200"></div>
+                <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-semibold uppercase tracking-widest">
+                  Or continue with
+                </span>
+                <div className="flex-grow border-t border-gray-200"></div>
+              </div>
+
+              <div className="flex justify-center w-full">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setErrorMsg('Google sign-in was closed or failed.')}
+                  theme="outline" size="large" text={isLogin ? 'signin_with' : 'signup_with'}
+                  shape="rectangular" logo_alignment="center" width="100%"
                 />
               </div>
-            </div>
+
+              <div className="mt-8 text-center text-sm text-gray-600">
+                {isLogin ? "Not yet registered? " : "Already applied? "}
+                <button 
+                  type="button" 
+                  onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setSuccessMsg(''); setPassword(''); }} 
+                  className="text-[#0284c7] font-bold hover:underline"
+                >
+                  {isLogin ? 'Register here' : 'Sign in here'}
+                </button>
+              </div>
+            </>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="w-5 h-5 text-gray-400" />
-              </div>
-              <input 
-                type="email" 
-                required 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 focus:border-transparent outline-none transition bg-gray-50 focus:bg-white text-sm" 
-                placeholder="you@email.com" 
-              />
-            </div>
-          </div>
-          
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-sm font-medium text-gray-700">Password</label>
-              {isLogin && (
-                <a href="#" className="text-xs text-dental-600 hover:text-dental-800 font-medium transition-colors">
-                  Forgot password?
-                </a>
-              )}
-            </div>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="w-5 h-5 text-gray-400" />
-              </div>
-              <input 
-                type={showPassword ? "text" : "password"} 
-                required 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-12 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 focus:border-transparent outline-none transition bg-gray-50 focus:bg-white text-sm" 
-                placeholder={isLogin ? "••••••••" : "Create a strong password"} 
-              />
-              <button 
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-          </div>
-
-          {isLogin && (
-            <div className="flex items-center mt-2 mb-4">
-              <input 
-                id="remember-me" 
-                name="remember-me" 
-                type="checkbox" 
-                className="h-4 w-4 text-dental-600 focus:ring-dental-500 border-gray-300 rounded cursor-pointer" 
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-600 cursor-pointer">
-                Remember me
-              </label>
-            </div>
-          )}
-
-          <button disabled={loading} type="submit" className="w-full bg-dental-600 text-white font-bold py-3.5 rounded-xl hover:bg-dental-700 transition shadow-lg shadow-dental-600/20 transform hover:-translate-y-0.5 mt-4 disabled:opacity-70 disabled:cursor-not-allowed">
-            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
-          </button>
-          
-          <p className="text-center text-sm text-gray-600 mt-6 pt-4 border-t border-gray-100">
-            {isLogin ? "Don't have an account?" : "Already have an account?"} 
-            <button 
-              type="button" 
-              onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setSuccessMsg(''); setPassword(''); }} 
-              className="text-dental-600 font-bold hover:text-dental-800 transition-colors ml-1.5"
-            >
-              {isLogin ? 'Sign up' : 'Sign in'}
-            </button>
-          </p>
-        </form>
+        </div>
       </div>
     </div>
   );

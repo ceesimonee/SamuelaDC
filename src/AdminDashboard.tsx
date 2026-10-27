@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Chart, registerables } from 'chart.js';
 import { supabase } from './lib/supabase'; // Adjust path if needed
 import { 
-  Clock, CalendarCheck, UserPlus, Activity, 
+  Clock, CalendarCheck, UserPlus, 
   ArrowRight, CalendarPlus, MonitorPlay, PlusCircle, Check
 } from 'lucide-react';
 
@@ -33,7 +33,7 @@ export default function AdminDashboard() {
   // Live Database State
   const [todayAppointments, setTodayAppointments] = useState<TodayAppointment[]>([]);
   const [todayCount, setTodayCount] = useState(0);
-  const [newPatientsCount, setNewPatientsCount] = useState(0); // <-- NEW STATE FOR PATIENTS
+  const [newPatientsCount, setNewPatientsCount] = useState(0); 
 
   // Live Tasks State
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -56,7 +56,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchTodayData();
     fetchTasks();
-    fetchNewPatients(); // <-- CALLING NEW FUNCTION
+    fetchNewPatients();
   }, []);
 
   const fetchTodayData = async () => {
@@ -77,17 +77,15 @@ export default function AdminDashboard() {
     }
   };
 
-  // ─── NEW: FETCH PATIENTS LOGIC ───
   const fetchNewPatients = async () => {
-    // Get the date for exactly 7 days ago
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const isoDate = oneWeekAgo.toISOString(); // Format Supabase understands
+    const isoDate = oneWeekAgo.toISOString(); 
 
     const { data, error } = await supabase
       .from('patients')
       .select('id')
-      .gte('created_at', isoDate); // .gte means "Greater Than or Equal to"
+      .gte('created_at', isoDate); 
 
     if (data && !error) {
       setNewPatientsCount(data.length);
@@ -142,8 +140,8 @@ export default function AdminDashboard() {
       const ctxLine = lineChartRef.current.getContext('2d');
       if (ctxLine) {
         const gradientLine = ctxLine.createLinearGradient(0, 0, 0, 250);
-        gradientLine.addColorStop(0, 'rgba(2, 132, 199, 0.3)');
-        gradientLine.addColorStop(1, 'rgba(2, 132, 199, 0)');
+        gradientLine.addColorStop(0, 'rgba(12, 74, 110, 0.3)');
+        gradientLine.addColorStop(1, 'rgba(12, 74, 110, 0)');
 
         if (lineChartInstance.current) lineChartInstance.current.destroy();
 
@@ -154,9 +152,9 @@ export default function AdminDashboard() {
             datasets: [{
               label: 'Patient Visits',
               data: [0, 0, 0, 0, 0, 0],
-              borderColor: '#e2e8f0', 
+              borderColor: '#0c4a6e', 
               borderWidth: 3, pointBackgroundColor: '#ffffff',
-              pointBorderColor: '#e2e8f0', pointBorderWidth: 2, pointRadius: 4,
+              pointBorderColor: '#0c4a6e', pointBorderWidth: 2, pointRadius: 4,
               pointHoverRadius: 6, tension: 0.4, fill: true, backgroundColor: gradientLine
             }]
           },
@@ -209,57 +207,57 @@ export default function AdminDashboard() {
       
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-dental-900">Welcome back, Dr. Samuela</h1>
+          <h1 className="font-serif text-3xl font-bold text-[#0c4a6e]">Welcome back, Dr. Samuela</h1>
           <p className="text-gray-500 mt-1">Here is your clinic's command center overview.</p>
         </div>
         
         <div className="bg-white border border-gray-200 px-5 py-3 rounded-xl shadow-sm flex items-center gap-4">
-          <Clock className="w-6 h-6 text-dental-600" />
+          <div className="bg-sky-50 p-2 rounded-lg">
+            <Clock className="w-6 h-6 text-[#0c4a6e]" />
+          </div>
           <div>
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">
               {time.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
             </p>
-            <p className="text-xl font-bold text-gray-900 font-sans leading-none tracking-tight">
+            <p className="text-xl font-bold text-[#0c4a6e] font-sans leading-none tracking-tight">
               {time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </p>
           </div>
         </div>
       </div>
 
-      {/* ── Stats Grid ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 card-hover">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-dental-100 p-3 rounded-xl text-dental-600"><CalendarCheck className="w-6 h-6" /></div>
-          </div>
-          <p className="text-4xl font-bold text-dental-900 font-serif">{todayCount}</p>
-          <p className="text-sm text-gray-500 mt-1 font-medium">Appointments Today</p>
-        </div>
+      {/* ── Stats Grid (Changed to 2 columns with bold blue theme) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
         
-        {/* ── RESTORED: NEW PATIENTS CARD ── */}
-        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 card-hover">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-accent-100 p-3 rounded-xl text-accent-600"><UserPlus className="w-6 h-6" /></div>
-            {newPatientsCount > 0 && (
-              <span className="text-xs font-bold text-accent-600 bg-accent-500/10 px-2 py-1 rounded-full">
-                +{newPatientsCount}
-              </span>
-            )}
-          </div>
-          <p className="text-4xl font-bold text-dental-900 font-serif">{newPatientsCount}</p>
-          <p className="text-sm text-gray-500 mt-1 font-medium">New Patients This Week</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-gray-600 to-gray-800 p-6 rounded-2xl shadow-lg shadow-gray-600/30 card-hover text-white relative overflow-hidden">
-          <div className="absolute -right-6 -top-6 text-white/10"><Activity className="w-32 h-32" /></div>
+        {/* ── Appointments Today (BLUE CARD) ── */}
+        <div className="bg-[#0c4a6e] p-6 rounded-2xl shadow-lg border border-[#0c4a6e] card-hover relative overflow-hidden text-white">
+          <div className="absolute -right-4 -top-4 text-white/10"><CalendarCheck className="w-32 h-32" /></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-4">
-              <div className="bg-white/20 p-3 rounded-xl"><Activity className="w-6 h-6" /></div>
+              <div className="bg-white/20 p-3 rounded-xl text-white"><CalendarCheck className="w-6 h-6" /></div>
             </div>
-            <p className="text-4xl font-bold font-serif text-gray-300">0%</p>
-            <p className="text-sm text-gray-300 mt-1 font-medium">Patient Satisfaction</p>
+            <p className="text-4xl font-bold font-serif">{todayCount}</p>
+            <p className="text-sm text-sky-100 mt-1 font-medium">Appointments Today</p>
           </div>
         </div>
+        
+        {/* ── New Patients Card (WHITE/BLUE ACCENT) ── */}
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 card-hover relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 text-sky-50"><UserPlus className="w-32 h-32" /></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="bg-sky-50 p-3 rounded-xl text-[#0c4a6e]"><UserPlus className="w-6 h-6" /></div>
+              {newPatientsCount > 0 && (
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full shadow-sm">
+                  +{newPatientsCount} New
+                </span>
+              )}
+            </div>
+            <p className="text-4xl font-bold text-[#0c4a6e] font-serif">{newPatientsCount}</p>
+            <p className="text-sm text-gray-500 mt-1 font-medium">New Patients This Week</p>
+          </div>
+        </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
@@ -268,8 +266,8 @@ export default function AdminDashboard() {
           {/* ── Charts Section ── */}
           <div className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100">
             <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-              <h3 className="font-serif text-xl font-bold text-dental-900">Clinic Analytics</h3>
-              <select className="bg-gray-50 border border-gray-200 text-sm rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-dental-500">
+              <h3 className="font-serif text-xl font-bold text-[#0c4a6e]">Clinic Analytics</h3>
+              <select className="bg-gray-50 border border-gray-200 text-sm rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-[#0c4a6e] text-[#0c4a6e] font-semibold">
                 <option>This Week</option>
                 <option>Last Week</option>
                 <option>This Month</option>
@@ -290,20 +288,20 @@ export default function AdminDashboard() {
 
           {/* ── LIVE Priority Table ── */}
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <h3 className="font-serif text-xl font-bold text-dental-900">Today's Patients</h3>
-              <Link to="/admin/appointments" className="text-sm font-semibold text-dental-600 hover:text-dental-800 transition flex items-center gap-1">
+            <div className="p-6 border-b border-[#0c4a6e] flex items-center justify-between bg-[#0c4a6e] text-white">
+              <h3 className="font-serif text-xl font-bold">Today's Patients</h3>
+              <Link to="/admin/appointments" className="text-sm font-semibold text-sky-100 hover:text-white transition flex items-center gap-1">
                 View Full Schedule <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-white border-b border-gray-100">
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Contact</th>
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Patient</th>
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Service</th>
-                    <th className="p-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Contact</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Patient</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Service</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -315,15 +313,15 @@ export default function AdminDashboard() {
                     </tr>
                   ) : (
                     todayAppointments.map((app) => (
-                      <tr key={app.id} className="hover:bg-gray-50 transition">
+                      <tr key={app.id} className="hover:bg-sky-50 transition">
                         <td className="p-4 font-medium text-gray-600 text-sm">{app.phone || 'N/A'}</td>
-                        <td className="p-4 font-bold text-dental-700">{app.name}</td>
+                        <td className="p-4 font-bold text-[#0c4a6e]">{app.name}</td>
                         <td className="p-4 text-sm text-gray-600">{app.service}</td>
                         <td className="p-4">
                           <span className={`border text-xs px-2.5 py-1 rounded-full font-bold ${
                             app.status === 'pending' 
                               ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
-                              : 'bg-dental-50 text-dental-700 border-dental-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}>
                             {app.status === 'pending' ? 'Pending' : 'Confirmed'}
                           </span>
@@ -341,19 +339,19 @@ export default function AdminDashboard() {
           
           {/* ── Quick Actions ── */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
-            <h3 className="font-serif text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-2">Quick Actions</h3>
+            <h3 className="font-serif text-lg font-bold text-[#0c4a6e] mb-4 border-b border-gray-100 pb-2">Quick Actions</h3>
             <div className="grid grid-cols-3 gap-3">
-              <button onClick={() => navigate('/admin/patients')} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-dental-50 rounded-xl border border-gray-100 hover:border-dental-300 transition group">
-                <UserPlus className="w-6 h-6 text-gray-500 group-hover:text-dental-600 mb-2" />
-                <span className="text-[10px] sm:text-xs font-bold text-gray-700 group-hover:text-dental-700 text-center">New Patient</span>
+              <button onClick={() => navigate('/admin/patients')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
+                <UserPlus className="w-6 h-6 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-bold text-center">New Patient</span>
               </button>
-              <button onClick={() => navigate('/admin/appointments')} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-dental-50 rounded-xl border border-gray-100 hover:border-dental-300 transition group">
-                <CalendarPlus className="w-6 h-6 text-gray-500 group-hover:text-dental-600 mb-2" />
-                <span className="text-[10px] sm:text-xs font-bold text-gray-700 group-hover:text-dental-700 text-center">Book Appt</span>
+              <button onClick={() => navigate('/admin/appointments')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
+                <CalendarPlus className="w-6 h-6 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-bold text-center">Book Appt</span>
               </button>
-              <button onClick={() => navigate('/admin/queue')} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-red-50 rounded-xl border border-gray-100 hover:border-red-300 transition group">
-                <MonitorPlay className="w-6 h-6 text-gray-500 group-hover:text-red-500 mb-2" />
-                <span className="text-[10px] sm:text-xs font-bold text-gray-700 group-hover:text-red-600 text-center">Live Queue</span>
+              <button onClick={() => navigate('/admin/queue')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
+                <MonitorPlay className="w-6 h-6 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-bold text-center">Live Queue</span>
               </button>
             </div>
           </div>
@@ -361,10 +359,10 @@ export default function AdminDashboard() {
           {/* ── LIVE Tasks ── */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
             <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-              <h3 className="font-serif text-lg font-bold text-gray-900">Clinic Tasks</h3>
+              <h3 className="font-serif text-lg font-bold text-[#0c4a6e]">Clinic Tasks</h3>
               <button 
                 onClick={() => setIsAddingTask(!isAddingTask)} 
-                className={`transition-colors ${isAddingTask ? 'text-red-500' : 'text-dental-500 hover:text-dental-700'}`}
+                className={`transition-colors ${isAddingTask ? 'text-red-500' : 'text-[#0c4a6e] hover:text-[#075985]'}`}
               >
                 <PlusCircle className={`w-5 h-5 transition-transform ${isAddingTask ? 'rotate-45' : ''}`} />
               </button>
@@ -379,9 +377,9 @@ export default function AdminDashboard() {
                   placeholder="Type a new task..." 
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-dental-500"
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-[#0c4a6e]"
                 />
-                <button type="submit" className="bg-dental-600 text-white p-2 rounded-lg hover:bg-dental-700 transition">
+                <button type="submit" className="bg-[#0c4a6e] text-white p-2 rounded-lg hover:bg-[#075985] transition">
                   <Check className="w-4 h-4" />
                 </button>
               </form>
@@ -397,12 +395,12 @@ export default function AdminDashboard() {
                       type="checkbox" 
                       checked={task.is_completed}
                       onChange={() => handleToggleTask(task.id, task.is_completed)}
-                      className="task-checkbox mt-1 w-4 h-4 text-dental-600 rounded border-gray-300 focus:ring-dental-500 cursor-pointer transition" 
+                      className="task-checkbox mt-1 w-4 h-4 text-[#0c4a6e] rounded border-gray-300 focus:ring-[#0c4a6e] cursor-pointer transition" 
                     />
                     <div className={`text-sm font-medium transition-all ${
                       task.is_completed 
                         ? 'text-gray-400 line-through' 
-                        : 'text-gray-700 group-hover:text-gray-900'
+                        : 'text-gray-700 group-hover:text-[#0c4a6e]'
                     }`}>
                       {task.title}
                     </div>

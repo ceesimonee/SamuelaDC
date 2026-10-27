@@ -25,10 +25,11 @@ type Appointment = {
   status: string;
 };
 
+// ─── UPDATED: Removed Implants, Ortho, and Cosmetics ───
 const CLINIC_SERVICES = [
-  'General Checkup', 'Tooth Filling Restoration', 'Dental Implants', 
+  'General Checkup', 'Tooth Filling Restoration', 
   'Cleaning & Prophylaxis', 'Tooth Extraction', 'Pit & Fissure Sealants', 
-  'Fluoride Application', 'Orthodontics', 'Cosmetic Dentistry', 'Other'
+  'Fluoride Application', 'Other'
 ];
 
 export default function AdminQueue() {
@@ -207,7 +208,7 @@ export default function AdminQueue() {
       const formattedPhone = '+' + cleanPhone;
       const messageBody = `Ticket ${currentPatient.ticket}: Your turn for ${currentPatient.service} in 10 mins. Please proceed to waiting area.`;
 
-      const response = await fetch('http://localhost:5000/api/send-sms', {
+      const response = await fetch('https://samueladc.onrender.com/api/send-sms', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -225,7 +226,7 @@ export default function AdminQueue() {
       }
 
       setSmsQuota((prev: any) => ({ ...prev, balance: Math.max(0, prev.balance - 1) }));
-      alert(`SMS Alert sent to ${currentPatient.name} via Express Backend!`);
+      alert(`SMS Alert sent to ${currentPatient.name} at ${currentPatient.phone}.`);
       
     } catch (error) {
       console.error("Failed to send SMS:", error);

@@ -6,7 +6,6 @@ import Login from './Login'
 import Appointment from './Appointment'
 import About from './About' 
 import ToothFilling from './services/ToothFilling'
-import DentalImplants from './services/DentalImplants';
 import Cleaning from './services/Cleaning';
 import Extraction from './services/Extraction';
 import Sealants from './services/Sealants';
@@ -18,51 +17,48 @@ import AdminQueue from './AdminQueue'
 import AdminPatients from './AdminPatients'
 import AdminTreatment from './AdminTreatment'
 import AdminTracking from './AdminTracking'
+
+// ── VERCEL DEPLOYMENT IMAGE IMPORTS ──
+import heroImg from './imports/SDC1.jfif';
+import aboutImg from './imports/SDC2.jfif';
+
 import {
   Smile, ChevronDown, ArrowRight, PlayCircle, Clock,
-  ShieldPlus, Scan, Sparkles, MinusCircle, ShieldCheck, Activity,
+  ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   MapPin, Phone, Mail, CheckCircle2,
   UserCircle2, Menu, X, LogOut 
 } from 'lucide-react'
 
-const HERO_IMG = 'src/imports/SDC1.jfif'
-const ABOUT_IMG = 'src/imports/SDC2.jfif'
-
+// ── FIXED: All service cards now use the uniform #0c4a6e blue color ──
 const services = [
   {
     icon: ShieldPlus, label: 'Tooth Filling Restoration',
     desc: 'Restore the strength and natural appearance of your teeth with our durable, tooth-colored composite fillings.',
-    bg: 'bg-sky-100', color: 'text-sky-600', linkColor: 'text-sky-600',
+    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
     path: '/services/tooth-filling'
-  },
-  {
-    icon: Scan, label: 'Dental Implants',
-    desc: 'Permanent tooth replacement solutions using titanium implants that look, feel, and function like natural teeth.',
-    bg: 'bg-emerald-100', color: 'text-emerald-600', linkColor: 'text-emerald-600',
-    path: '/services/implants'
   },
   {
     icon: Sparkles, label: 'Cleaning & Prophylaxis',
     desc: 'Maintain a bright, healthy smile and prevent gum disease with our thorough, professional dental cleaning services.',
-    bg: 'bg-purple-100', color: 'text-purple-600', linkColor: 'text-purple-600',
+    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
     path: '/services/cleaning'
   },
   {
     icon: MinusCircle, label: 'Tooth Extraction',
     desc: 'Comfortable, stress-free tooth removal for severely decayed, damaged, or problematic wisdom teeth.',
-    bg: 'bg-red-100', color: 'text-red-600', linkColor: 'text-red-600',
+    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
     path: '/services/extraction'
   },
   {
     icon: ShieldCheck, label: 'Pit & Fissure Sealants',
     desc: 'Protect your teeth from decay by blocking out cavity-causing bacteria in the deep grooves of your molars.',
-    bg: 'bg-orange-100', color: 'text-orange-600', linkColor: 'text-orange-600',
+    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
     path: '/services/sealants'
   },
   {
     icon: Activity, label: 'Fluoride Application',
     desc: 'Strengthen your teeth and protect them against decay. Rebuild weakened enamel and reverse early signs of tooth decay.',
-    bg: 'bg-teal-100', color: 'text-teal-600', linkColor: 'text-teal-600',
+    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
     path: '/services/fluoride'
   },
 ]
@@ -136,23 +132,23 @@ function PublicLayout() {
 
             {/* Logo */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavClick('home')}>
-              <div className="bg-[#0284c7] p-2 rounded-full">
+              <div className="bg-[#0c4a6e] p-2 rounded-full">
                 <Smile className="w-8 h-8 text-white" />
               </div>
               <div>
                 <span className="font-serif text-2xl font-bold text-[#0c4a6e]">Samuela Dental Clinic</span>
-                <p className="text-xs text-[#0284c7] tracking-wider font-bold">DENTAL EXCELLENCE</p>
+                <p className="text-xs text-[#0c4a6e] tracking-wider font-bold">DENTAL EXCELLENCE</p>
               </div>
             </div>
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
-              <button onClick={() => handleNavClick('home')} className="nav-link-underline text-gray-700 hover:text-[#0284c7] font-medium transition">Home</button>
+              <button onClick={() => handleNavClick('home')} className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">Home</button>
 
               <div className="relative group">
                 <button
                   onClick={() => handleNavClick('services')}
-                  className="nav-link-underline text-gray-700 hover:text-[#0284c7] font-medium transition flex items-center gap-1 py-2"
+                  className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition flex items-center gap-1 py-2"
                 >
                   Services
                   <ChevronDown className="w-4 h-4 transition-transform duration-300 group-hover:rotate-180" />
@@ -160,7 +156,7 @@ function PublicLayout() {
                 <div className="absolute left-0 top-full mt-4 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 origin-top -translate-y-2 group-hover:translate-y-0 z-50">
                   <div className="bg-white rounded-xl shadow-xl border border-gray-100 py-3">
                     {services.map(({ icon: Icon, label, path }) => (
-                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-5 py-2.5 text-sm text-gray-700 hover:bg-sky-50 hover:text-[#0284c7] transition">
+                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-5 py-2.5 text-sm text-gray-700 hover:bg-sky-50 hover:text-[#0c4a6e] transition">
                         <Icon className="w-4 h-4" /> {label}
                       </Link>
                     ))}
@@ -168,7 +164,7 @@ function PublicLayout() {
                 </div>
               </div>
 
-              <Link to="/about" className="nav-link-underline text-gray-700 hover:text-[#0284c7] font-medium transition">About</Link>
+              <Link to="/about" className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">About</Link>
 
               <div className="flex items-center gap-4 pl-4 border-l border-gray-200">
                 
@@ -208,12 +204,12 @@ function PublicLayout() {
                     )}
                   </div>
                 ) : (
-                  <Link to="/login" className="text-gray-500 hover:text-[#0284c7] transition hover:scale-110" title="Login / Register">
+                  <Link to="/login" className="text-gray-500 hover:text-[#0c4a6e] transition hover:scale-110" title="Login / Register">
                     <UserCircle2 className="w-7 h-7" />
                   </Link>
                 )}
 
-                <Link to="/appointment" className="bg-[#0284c7] text-white px-6 py-2.5 rounded-full font-medium hover:bg-[#0369a1] transition shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform">
+                <Link to="/appointment" className="bg-[#0c4a6e] text-white px-6 py-2.5 rounded-full font-medium hover:bg-[#075985] transition shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform">
                   Book Appointment
                 </Link>
               </div>
@@ -241,7 +237,7 @@ function PublicLayout() {
                 {mobileDropOpen && (
                   <div className="pl-6 pr-3 py-2 space-y-2 bg-gray-50/50 rounded-lg mt-1 border-l-2 border-sky-200 ml-3">
                     {services.map(({ label, path }) => (
-                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:text-[#0284c7] rounded-md">
+                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:text-[#0c4a6e] rounded-md">
                         {label}
                       </Link>
                     ))}
@@ -256,13 +252,13 @@ function PublicLayout() {
                     <LogOut className="w-5 h-5" /> Sign Out
                   </button>
                 ) : (
-                  <Link to="/login" onClick={() => setMobileOpen(false)} className="w-full text-left px-3 py-2 text-[#0284c7] font-medium hover:bg-sky-50 rounded-md flex items-center gap-2">
+                  <Link to="/login" onClick={() => setMobileOpen(false)} className="w-full text-left px-3 py-2 text-[#0c4a6e] font-medium hover:bg-sky-50 rounded-md flex items-center gap-2">
                     <UserCircle2 className="w-5 h-5" /> Login / Register
                   </Link>
                 )}
               </div>
               
-              <Link to="/appointment" onClick={() => setMobileOpen(false)} className="block text-center w-full mt-2 bg-[#0284c7] text-white px-6 py-3 rounded-full font-medium">
+              <Link to="/appointment" onClick={() => setMobileOpen(false)} className="block text-center w-full mt-2 bg-[#0c4a6e] text-white px-6 py-3 rounded-full font-medium">
                 Book Now
               </Link>
             </div>
@@ -358,17 +354,17 @@ function LandingPage() {
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div className="space-y-8 animate-fade-in-up">
               <h1 className="font-serif text-5xl md:text-6xl lg:text-7xl font-bold text-[#0c4a6e] leading-tight">
-                Creating <span className="text-[#0284c7]">Beautiful</span> Smiles That Last
+                Creating <span className="text-[#0c4a6e]">Beautiful</span> Smiles That Last
               </h1>
               <p className="text-lg text-gray-600 leading-relaxed max-w-lg">
                 Experience world-class dental care with cutting-edge technology and compassionate expertise. Your smile is our masterpiece.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link to="/appointment" className="bg-[#0284c7] text-white px-8 py-4 rounded-full font-semibold hover:bg-[#0369a1] transition shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group w-fit">
+                <Link to="/appointment" className="bg-[#0c4a6e] text-white px-8 py-4 rounded-full font-semibold hover:bg-[#075985] transition shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group w-fit">
                   Schedule Consultation
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition" />
                 </Link>
-                <button onClick={() => scrollTo('services')} className="bg-white text-[#0369a1] border-2 border-sky-200 px-8 py-4 rounded-full font-semibold hover:border-[#0284c7] hover:text-[#0284c7] transition flex items-center justify-center gap-2">
+                <button onClick={() => scrollTo('services')} className="bg-white text-[#0c4a6e] border-2 border-[#0c4a6e] px-8 py-4 rounded-full font-semibold hover:bg-gray-50 transition flex items-center justify-center gap-2">
                   <PlayCircle className="w-5 h-5" />
                   Our Services
                 </button>
@@ -377,10 +373,10 @@ function LandingPage() {
 
             <div className="relative hidden md:block">
               <div className="absolute inset-0 bg-gradient-to-r from-sky-500 to-emerald-500 rounded-3xl transform rotate-3 opacity-20" />
-              <img src={HERO_IMG} alt="Modern Dental Office" className="relative rounded-3xl shadow-2xl w-full object-cover h-[500px] animate-float" />
+              <img src={heroImg} alt="Modern Dental Office" className="relative rounded-3xl shadow-2xl w-full object-cover h-[500px] animate-float" />
               <div className="absolute -top-6 -right-6 bg-white p-4 rounded-2xl shadow-xl">
                 <div className="flex items-center gap-3">
-                  <Clock className="w-6 h-6 text-[#0284c7]" />
+                  <Clock className="w-6 h-6 text-[#0c4a6e]" />
                   <div>
                     <p className="font-bold text-sm">Open Today</p>
                     <p className="text-xs text-gray-500">9:00 AM - 6:00 PM</p>
@@ -392,34 +388,23 @@ function LandingPage() {
         </div>
 
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
-          <button onClick={() => scrollTo('services')} className="text-[#0284c7] hover:text-[#0369a1]">
+          <button onClick={() => scrollTo('services')} className="text-[#0c4a6e] hover:text-[#075985]">
             <ChevronDown className="w-8 h-8" />
           </button>
         </div>
       </section>
 
+      {/* Blue Section left blank as requested */}
       <section className="bg-[#0c4a6e] py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center text-white">
-            {[
-              { val: '5+', label: 'Years Experience' },
-              { val: '1000+', label: 'Happy Patients' },
-              { val: '1', label: 'Expert Dentist' },
-              { val: '99%', label: 'Success Rate' },
-            ].map(({ val, label }) => (
-              <div key={label}>
-                <p className="text-4xl font-bold font-serif text-emerald-400">{val}</p>
-                <p className="text-sky-200 mt-1">{label}</p>
-              </div>
-            ))}
-          </div>
+          <div className="min-h-[60px]"></div>
         </div>
       </section>
 
       <section id="services" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
-            <span className="text-[#0284c7] font-semibold tracking-wider uppercase text-sm">Our Services</span>
+            <span className="text-[#0c4a6e] font-semibold tracking-wider uppercase text-sm">Our Services</span>
             <h2 className="font-serif text-4xl font-bold text-gray-900 mt-2 mb-4">Comprehensive Dental Solutions</h2>
             <p className="text-gray-600">From preventive care to complete restorations, we offer a full spectrum of dental services using the latest technology and techniques.</p>
           </div>
@@ -445,16 +430,16 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-16 items-center">
             <div className="relative">
-              <img src={ABOUT_IMG} alt="Our Clinic" className="rounded-3xl shadow-xl w-full object-cover" />
+              <img src={aboutImg} alt="Our Clinic" className="rounded-3xl shadow-xl w-full object-cover" />
             </div>
             <div className="space-y-6">
-              <span className="text-[#0284c7] font-semibold tracking-wider uppercase text-sm">About Our Clinic</span>
+              <span className="text-[#0c4a6e] font-semibold tracking-wider uppercase text-sm">About Our Clinic</span>
               <h2 className="font-serif text-4xl font-bold text-gray-900">Crafting Perfect Smiles with Precision & Care</h2>
               <p className="text-gray-600 leading-relaxed">
                 At Samuela Dental Clinic, we believe everyone deserves a healthy, beautiful smile. Our state-of-the-art facility combines cutting-edge technology with a warm, welcoming environment to provide dental care that exceeds expectations.
               </p>
               <div className="pt-4">
-                <Link to="/about" className="bg-sky-100 text-[#0369a1] px-6 py-3 rounded-full font-semibold hover:bg-sky-200 transition flex items-center gap-2 group w-fit">
+                <Link to="/about" className="bg-sky-100 text-[#0c4a6e] px-6 py-3 rounded-full font-semibold hover:bg-sky-200 transition flex items-center gap-2 group w-fit">
                   Read Our Full Story
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
                 </Link>
@@ -468,7 +453,7 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-16">
             <div>
-              <span className="text-[#0284c7] font-semibold tracking-wider uppercase text-sm">Contact Us</span>
+              <span className="text-[#0c4a6e] font-semibold tracking-wider uppercase text-sm">Contact Us</span>
               <h2 className="font-serif text-4xl font-bold text-gray-900 mt-2 mb-6">Visit Our Clinic</h2>
               <p className="text-gray-600 mb-8">Ready to transform your smile? Visit us at our state-of-the-art facility or book an appointment online.</p>
 
@@ -481,7 +466,7 @@ function LandingPage() {
                 ].map(({ icon: Icon, title, lines }) => (
                   <div key={title} className="flex items-start gap-4">
                     <div className="bg-sky-100 p-3 rounded-lg shrink-0">
-                      <Icon className="w-6 h-6 text-[#0284c7]" />
+                      <Icon className="w-6 h-6 text-[#0c4a6e]" />
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">{title}</h4>
@@ -530,7 +515,7 @@ function LandingPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full bg-[#0284c7] text-white font-semibold py-4 rounded-lg hover:bg-[#0369a1] transition shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-[#0c4a6e] text-white font-semibold py-4 rounded-lg hover:bg-[#075985] transition shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Sending…' : 'Send Message'}
                 </button>
@@ -558,7 +543,6 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<About />} /> 
           <Route path="/services/tooth-filling" element={<ToothFilling />} />
-          <Route path="/services/implants" element={<DentalImplants />} />
           <Route path="/services/cleaning" element={<Cleaning />} />
           <Route path="/services/extraction" element={<Extraction />} />
           <Route path="/services/sealants" element={<Sealants />} />
