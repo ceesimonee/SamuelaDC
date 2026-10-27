@@ -25,7 +25,6 @@ type Appointment = {
   status: string;
 };
 
-// ─── UPDATED: Removed Implants, Ortho, and Cosmetics ───
 const CLINIC_SERVICES = [
   'General Checkup', 'Tooth Filling Restoration', 
   'Cleaning & Prophylaxis', 'Tooth Extraction', 'Pit & Fissure Sealants', 
@@ -48,18 +47,25 @@ export default function AdminQueue() {
   const [isSaved, setIsSaved] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
 
-  const [smsQuota, setSmsQuota] = useState(() => {
-    const saved = localStorage.getItem('sms_quota_data');
-    return saved ? JSON.parse(saved) : { balance: 199, total: 202 };
-  });
-
-  useEffect(() => {
-    localStorage.setItem('sms_quota_data', JSON.stringify(smsQuota));
-  }, [smsQuota]);
+  // Default synced to your current IPROG dashboard (188 left / 202 total)
+  const [smsQuota, setSmsQuota] = useState({ balance: 188, total: 202 });
 
   useEffect(() => {
     fetchQueue();
+    fetchSmsQuota();
   }, []);
+
+  const fetchSmsQuota = async () => {
+    const { data, error } = await supabase
+      .from('clinic_settings')
+      .select('sms_balance, sms_total')
+      .eq('id', 1)
+      .single();
+
+    if (!error && data) {
+      setSmsQuota({ balance: data.sms_balance, total: data.sms_total });
+    }
+  };
 
   const fetchQueue = async () => {
     const { data: waitingData, error: waitingError } = await supabase
@@ -225,7 +231,15 @@ export default function AdminQueue() {
         throw new Error(result.error?.message || "Backend request failed");
       }
 
-      setSmsQuota((prev: any) => ({ ...prev, balance: Math.max(0, prev.balance - 1) }));
+      // Calculate new balance and save permanently to Supabase
+      const newBalance = Math.max(0, smsQuota.balance - 1);
+      setSmsQuota(prev => ({ ...prev, balance: newBalance }));
+
+      await supabase
+        .from('clinic_settings')
+        .update({ sms_balance: newBalance })
+        .eq('id', 1);
+
       alert(`SMS Alert sent to ${currentPatient.name} at ${currentPatient.phone}.`);
       
     } catch (error) {
