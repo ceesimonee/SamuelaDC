@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom'
-import { sendContactMessage } from './lib/api'
 import { supabase } from './lib/supabase' 
 import Login from './Login'
 import Appointment from './Appointment'
@@ -166,7 +165,6 @@ function PublicLayout() {
 
   const handleBellClick = async () => {
     setBellOpen(!bellOpen);
-    // Mark as read when opening the dropdown
     if (!bellOpen && unreadCount > 0 && user) {
       setUnreadCount(0);
       await supabase
@@ -179,7 +177,6 @@ function PublicLayout() {
     }
   }
 
-  // Smart Navigation
   const handleNavClick = (sectionId: string) => {
     setMobileOpen(false)
     if (location.pathname !== '/') {
@@ -198,7 +195,6 @@ function PublicLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
 
-            {/* Logo */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavClick('home')}>
               <div className="bg-[#0c4a6e] p-2 rounded-full">
                 <Smile className="w-8 h-8 text-white" />
@@ -209,7 +205,6 @@ function PublicLayout() {
               </div>
             </div>
 
-            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
               <button onClick={() => handleNavClick('home')} className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">Home</button>
 
@@ -235,8 +230,6 @@ function PublicLayout() {
               <Link to="/about" className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">About</Link>
 
               <div className="flex items-center gap-4 pl-4 border-l border-gray-200">
-                
-                {/* PROFILE BUTTON */}
                 {user ? (
                   <div className="relative" ref={profileRef}>
                     <button 
@@ -246,7 +239,6 @@ function PublicLayout() {
                       <UserCircle2 className="w-8 h-8 text-slate-500" strokeWidth={2} />
                     </button>
 
-                    {/* Profile Dropdown */}
                     {profileOpen && (
                       <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50 animate-fade-in-up">
                         <div className="px-4 py-2 mb-1 border-b border-gray-50">
@@ -277,7 +269,6 @@ function PublicLayout() {
                   Book Appointment
                 </Link>
 
-                {/* NOTIFICATION BELL (Always visible now) */}
                 <div className="relative" ref={bellRef}>
                   <button 
                     onClick={handleBellClick}
@@ -291,7 +282,6 @@ function PublicLayout() {
                     )}
                   </button>
 
-                  {/* Notification Dropdown */}
                   {bellOpen && (
                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up">
                       <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
@@ -335,7 +325,6 @@ function PublicLayout() {
               </div>
             </div>
 
-            {/* Mobile Hamburger & Bell */}
             <div className="md:hidden flex items-center gap-3">
               <button onClick={handleBellClick} className="relative p-2">
                 <Bell className="w-6 h-6 text-[#0c4a6e]" />
@@ -353,7 +342,6 @@ function PublicLayout() {
           </div>
         </div>
 
-        {/* Mobile Notification Dropdown (Shows if bell clicked on mobile) */}
         {bellOpen && (
           <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg max-h-80 overflow-y-auto z-50">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900">
@@ -391,7 +379,6 @@ function PublicLayout() {
           </div>
         )}
 
-        {/* Mobile Menu */}
         {mobileOpen && !bellOpen && (
           <div className="md:hidden bg-white border-t z-40 relative">
             <div className="px-4 pt-2 pb-6 space-y-2">
@@ -435,7 +422,6 @@ function PublicLayout() {
         )}
       </nav>
 
-      {/* Main Page Content injected here */}
       <main className="flex-grow">
         <Outlet />
       </main>
@@ -474,7 +460,7 @@ function PublicLayout() {
             </div>
           </div>
           <div className="border-t border-[#075985] pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sky-300 text-sm">© 2024 Samuela Dental Clinic. All rights reserved.</p>
+            <p className="text-sky-300 text-sm">© 2026 Samuela Dental Clinic. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -486,7 +472,8 @@ function PublicLayout() {
 function LandingPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', service: 'Tooth Filling Restoration', message: '' })
+  // 👉 REPLACED SERVICE WITH PHONE
+  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showToast = (type: 'success' | 'error', msg: string) => {
@@ -499,11 +486,21 @@ function LandingPage() {
     e.preventDefault()
     setSubmitting(true)
     try {
-      await sendContactMessage(form)
-      setForm({ name: '', email: '', service: 'Tooth Filling Restoration', message: '' })
-      showToast('success', 'Message sent! We will contact you shortly.')
-    } catch {
-      showToast('error', 'Something went wrong. Please try again.')
+      const { error } = await supabase.from('contact_messages').insert([
+        {
+          name: form.name,
+          email: form.email,
+          phone: form.phone, // 👉 Insert phone number instead of service
+          message: form.message
+        }
+      ]);
+
+      if (error) throw error;
+
+      setForm({ name: '', email: '', phone: '', message: '' })
+      showToast('success', 'Message sent! We will review your inquiry shortly.')
+    } catch (err: any) {
+      showToast('error', 'Something went wrong: ' + (err.message || 'Please try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -664,13 +661,13 @@ function LandingPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Service Needed</label>
-                  <select
-                    value={form.service} onChange={e => setForm(f => ({ ...f, service: e.target.value }))}
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                  {/* 👉 REPLACED DROPDOWN WITH PHONE FIELD */}
+                  <input
+                    type="tel" required placeholder="+63 9xx xxx xxxx"
+                    value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                     className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition bg-gray-50 focus:bg-white"
-                  >
-                    {services.map(s => <option key={s.label}>{s.label}</option>)}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
@@ -707,11 +704,9 @@ function AdminRoute() {
   const [isAdmin, setIsAdmin] = useState(false);
   const navigate = useNavigate();
 
-  // 👉 UPDATED TO YOUR OFFICIAL ADMIN EMAIL
   const ADMIN_EMAIL = 'admin@samueladental.com'; 
 
   useEffect(() => {
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.email === ADMIN_EMAIL) {
         setIsAdmin(true);
@@ -719,7 +714,6 @@ function AdminRoute() {
       setLoading(false);
     });
 
-    // Listen for changes (in case of a slow login redirect)
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user?.email === ADMIN_EMAIL) {
         setIsAdmin(true);
@@ -743,7 +737,6 @@ function AdminRoute() {
     );
   }
 
-  // If they are not the admin, immediately block them
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
@@ -762,7 +755,6 @@ function AdminRoute() {
     );
   }
 
-  // If they are the admin, render the AdminLayout
   return <Outlet />;
 }
 
@@ -784,7 +776,6 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/appointment" element={<Appointment />} />
         
-        {/* WE HAVE WRAPPED THE ADMIN LAYOUT IN THE SECURE ROUTE GUARD HERE */}
         <Route element={<AdminRoute />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
