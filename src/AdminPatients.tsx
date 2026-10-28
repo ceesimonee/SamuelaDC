@@ -6,7 +6,6 @@ import {
   Download, FileSpreadsheet, Printer, ChevronDown, Sparkles, CheckCircle2, Clock
 } from 'lucide-react';
 
-// Define the patient data structure
 type Patient = {
   id: number;
   name: string;
@@ -25,7 +24,6 @@ type PatientImage = {
   image_url: string;
 };
 
-// ─── NEW: Dental Chart (Odontogram) Data Structure ───
 type DentalChartEntry = {
   id: string;
   toothNumber: string;
@@ -36,9 +34,7 @@ type DentalChartEntry = {
   date: string;
 };
 
-// Complete FDI 32-Tooth Anatomical Reference
 const FDI_TEETH: { [key: string]: string } = {
-  // Upper Right (Quadrant 1)
   '18': 'Upper right third molar',
   '17': 'Upper right second molar',
   '16': 'Upper right first molar',
@@ -47,7 +43,6 @@ const FDI_TEETH: { [key: string]: string } = {
   '13': 'Upper right canine',
   '12': 'Upper right lateral incisor',
   '11': 'Upper right central incisor',
-  // Upper Left (Quadrant 2)
   '21': 'Upper left central incisor',
   '22': 'Upper left lateral incisor',
   '23': 'Upper left canine',
@@ -56,7 +51,6 @@ const FDI_TEETH: { [key: string]: string } = {
   '26': 'Upper left first molar',
   '27': 'Upper left second molar',
   '28': 'Upper left third molar',
-  // Lower Left (Quadrant 3)
   '38': 'Lower left third molar',
   '37': 'Lower left second molar',
   '36': 'Lower left first molar',
@@ -65,7 +59,6 @@ const FDI_TEETH: { [key: string]: string } = {
   '33': 'Lower left canine',
   '32': 'Lower left lateral incisor',
   '31': 'Lower left central incisor',
-  // Lower Right (Quadrant 4)
   '48': 'Lower right third molar',
   '47': 'Lower right second molar',
   '46': 'Lower right first molar',
@@ -107,10 +100,7 @@ export default function AdminPatients() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Export Dropdown State
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-
-  // PDA-Style Add Patient Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newPatientForm, setNewPatientForm] = useState({ 
     firstName: '', lastName: '', middleName: '', 
@@ -120,43 +110,34 @@ export default function AdminPatients() {
     physician: '', bloodType: '', bloodPressure: '', allergies: '', conditions: ''
   });
 
-  // Profile Modal State
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<'odontogram' | 'records'>('odontogram');
   const [patientImages, setPatientImages] = useState<PatientImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   
-  // Notes Edit State 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [editedNotes, setEditedNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
 
-  // ─── NEW: Dental Chart (Odontogram) State ───
+  // ─── Dental Chart State (Defaulting to blank/unselected) ───
   const [dentalChartEntries, setDentalChartEntries] = useState<DentalChartEntry[]>([]);
-  const [selectedTooth, setSelectedTooth] = useState('36');
-  const [toothCondition, setToothCondition] = useState('Decayed');
-  const [toothTreatment, setToothTreatment] = useState('Dental filling');
-  const [dentistNotes, setDentistNotes] = useState('Caries observed; for dentist evaluation.');
+  const [selectedTooth, setSelectedTooth] = useState('11');
+  const [toothCondition, setToothCondition] = useState(''); // ── Blank default
+  const [toothTreatment, setToothTreatment] = useState(''); // ── Blank default
+  const [dentistNotes, setDentistNotes] = useState('');     // ── Blank default
   const [isSavingTooth, setIsSavingTooth] = useState(false);
 
-  // 1. Fetch Patients on Load
   useEffect(() => {
     fetchPatients();
   }, []);
 
   const fetchPatients = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from('patients')
-      .select('*');
-
-    if (data && !error) {
-      setPatients(data);
-    }
+    const { data, error } = await supabase.from('patients').select('*');
+    if (data && !error) setPatients(data);
     setIsLoading(false);
   };
 
-  // Load patient's saved dental chart from localStorage
   const loadPatientDentalChart = (patientId: number) => {
     const saved = localStorage.getItem(`samuela_dental_chart_${patientId}`);
     if (saved) {
@@ -170,7 +151,6 @@ export default function AdminPatients() {
     }
   };
 
-  // Select a tooth from either the interactive diagram or dropdown
   const handleSelectTooth = (toothNum: string) => {
     setSelectedTooth(toothNum);
     const existing = dentalChartEntries.find(e => e.toothNumber === toothNum);
@@ -179,22 +159,25 @@ export default function AdminPatients() {
       setToothTreatment(existing.treatment);
       setDentistNotes(existing.dentistNotes);
     } else {
-      setToothCondition('Decayed');
-      setToothTreatment('Dental filling');
+      setToothCondition('');
+      setToothTreatment('');
       setDentistNotes('');
     }
   };
 
-  // Save a tooth entry to both Dental Chart History and Supabase Clinical Notes
   const handleSaveToothEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatient) return;
+
+    if (!toothCondition || !toothTreatment) {
+      alert("Please select both a tooth condition and treatment before saving.");
+      return;
+    }
+
     setIsSavingTooth(true);
 
     const todayFormatted = new Date().toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
+      month: 'long', day: 'numeric', year: 'numeric'
     });
 
     const newEntry: DentalChartEntry = {
@@ -207,7 +190,6 @@ export default function AdminPatients() {
       date: todayFormatted
     };
 
-    // Keep latest record per tooth at top of list
     const updatedEntries = [
       newEntry,
       ...dentalChartEntries.filter(item => item.toothNumber !== selectedTooth)
@@ -216,7 +198,6 @@ export default function AdminPatients() {
     setDentalChartEntries(updatedEntries);
     localStorage.setItem(`samuela_dental_chart_${selectedPatient.id}`, JSON.stringify(updatedEntries));
 
-    // Also append a clean clinical log entry into Supabase patient notes so database stays synced
     const chartLogLine = `\n[DENTAL CHART - ${todayFormatted}] Tooth #${selectedTooth} (${FDI_TEETH[selectedTooth]}): Condition: ${toothCondition} | Treatment: ${toothTreatment} | Notes: ${newEntry.dentistNotes}`;
     const updatedNotesText = (selectedPatient.notes ? selectedPatient.notes.trimEnd() + '\n' : '') + chartLogLine;
 
@@ -241,40 +222,27 @@ export default function AdminPatients() {
     localStorage.setItem(`samuela_dental_chart_${selectedPatient.id}`, JSON.stringify(filtered));
   };
 
-  // Helper to color-code teeth on the interactive odontogram
   const getToothBadgeStyle = (condition?: string) => {
     switch (condition) {
-      case 'Decayed':
-        return 'bg-red-100 text-red-700 border-red-300';
-      case 'Filled or restored':
-        return 'bg-sky-100 text-sky-700 border-sky-300';
+      case 'Decayed': return 'bg-red-100 text-red-700 border-red-300';
+      case 'Filled or restored': return 'bg-sky-100 text-sky-700 border-sky-300';
       case 'Missing':
-      case 'Extracted':
-        return 'bg-gray-200 text-gray-500 border-gray-300 line-through';
-      case 'Crown or root canal treated':
-        return 'bg-purple-100 text-purple-700 border-purple-300';
-      case 'Healthy':
-        return 'bg-emerald-100 text-emerald-700 border-emerald-300';
-      default:
-        return 'bg-white text-gray-700 border-gray-200 hover:border-dental-400';
+      case 'Extracted': return 'bg-gray-200 text-gray-500 border-gray-300 line-through';
+      case 'Crown or root canal treated': return 'bg-purple-100 text-purple-700 border-purple-300';
+      case 'Healthy': return 'bg-emerald-100 text-emerald-700 border-emerald-300';
+      default: return 'bg-white text-gray-700 border-gray-200 hover:border-dental-400';
     }
   };
 
   const getConditionPillStyle = (condition: string) => {
     switch (condition) {
-      case 'Decayed':
-        return 'bg-red-100 text-red-700';
-      case 'Filled or restored':
-        return 'bg-sky-100 text-sky-700';
+      case 'Decayed': return 'bg-red-100 text-red-700';
+      case 'Filled or restored': return 'bg-sky-100 text-sky-700';
       case 'Missing':
-      case 'Extracted':
-        return 'bg-gray-200 text-gray-700';
-      case 'Crown or root canal treated':
-        return 'bg-purple-100 text-purple-700';
-      case 'Healthy':
-        return 'bg-emerald-100 text-emerald-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
+      case 'Extracted': return 'bg-gray-200 text-gray-700';
+      case 'Crown or root canal treated': return 'bg-purple-100 text-purple-700';
+      case 'Healthy': return 'bg-emerald-100 text-emerald-700';
+      default: return 'bg-gray-100 text-gray-700';
     }
   };
 
@@ -330,38 +298,24 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     }
   };
 
-  // Delete Patient Logic
   const handleDeletePatient = async (id: number, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete the record for ${name}? This action cannot be undone.`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete the record for ${name}? This action cannot be undone.`)) return;
 
-    const { error } = await supabase
-      .from('patients')
-      .delete()
-      .eq('id', id);
-
+    const { error } = await supabase.from('patients').delete().eq('id', id);
     if (!error) {
       setPatients(patients.filter(p => p.id !== id));
       localStorage.removeItem(`samuela_dental_chart_${id}`);
-      if (selectedPatient?.id === id) {
-        setSelectedPatient(null);
-      }
+      if (selectedPatient?.id === id) setSelectedPatient(null);
     } else {
       alert("Error deleting patient: " + error.message);
     }
   };
 
-  // Save Notes Logic
   const handleSaveNotes = async () => {
     if (!selectedPatient) return;
     setIsSavingNotes(true);
 
-    const { error } = await supabase
-      .from('patients')
-      .update({ notes: editedNotes })
-      .eq('id', selectedPatient.id);
-
+    const { error } = await supabase.from('patients').update({ notes: editedNotes }).eq('id', selectedPatient.id);
     if (!error) {
       setPatients(patients.map(p => p.id === selectedPatient.id ? { ...p, notes: editedNotes } : p));
       setSelectedPatient({ ...selectedPatient, notes: editedNotes });
@@ -369,28 +323,17 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     } else {
       alert("Error saving notes: " + error.message);
     }
-    
     setIsSavingNotes(false);
   };
 
-  // Fetch Images
   const fetchPatientImages = async (patientId: number) => {
-    const { data, error } = await supabase
-      .from('patient-images')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('id', { ascending: false });
-
-    if (data && !error) {
-      setPatientImages(data);
-    }
+    const { data, error } = await supabase.from('patient-images').select('*').eq('patient_id', patientId).order('id', { ascending: false });
+    if (data && !error) setPatientImages(data);
   };
 
-  // Handle Image Upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedPatient) return;
-
     setIsUploading(true);
 
     try {
@@ -398,21 +341,11 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
       const fileName = `${selectedPatient.id}-${Date.now()}.${fileExt}`;
       const filePath = `records/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('medical-records')
-        .upload(filePath, file);
-
+      const { error: uploadError } = await supabase.storage.from('medical-records').upload(filePath, file);
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('medical-records')
-        .getPublicUrl(filePath);
-
-      const { data: dbData, error: dbError } = await supabase
-        .from('patient-images') 
-        .insert([{ patient_id: selectedPatient.id, image_url: publicUrl }])
-        .select()
-        .single();
+      const { data: { publicUrl } } = supabase.storage.from('medical-records').getPublicUrl(filePath);
+      const { data: dbData, error: dbError } = await supabase.from('patient-images').insert([{ patient_id: selectedPatient.id, image_url: publicUrl }]).select().single();
 
       if (dbError) throw dbError;
       setPatientImages([dbData, ...patientImages]);
@@ -431,13 +364,14 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     setPatientImages([]); 
     fetchPatientImages(patient.id);
     loadPatientDentalChart(patient.id);
-    setSelectedTooth('36');
-    setToothCondition('Decayed');
-    setToothTreatment('Dental filling');
-    setDentistNotes('Caries observed; for dentist evaluation.');
+    
+    // ── FIXED: Completely blank states when opening patient profile
+    setSelectedTooth('11');
+    setToothCondition('');
+    setToothTreatment('');
+    setDentistNotes('');
   };
 
-  // Helper functions
   const getInitials = (name: string) => {
     const parts = name.replace(',', '').split(' ');
     if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
@@ -456,7 +390,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     return colors[id % colors.length];
   };
 
-  // Sorting & Filtering Logic
   const filteredAndSortedPatients = patients
     .filter(patient => 
       patient.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -470,7 +403,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
       return 0;
     });
 
-  // ─── EXPORT TO EXCEL (CSV) ───
   const handleExportExcel = () => {
     if (filteredAndSortedPatients.length === 0) {
       alert("No patient records available to export.");
@@ -478,11 +410,9 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     }
 
     const headers = ['Patient ID', 'Full Name', 'Sex', 'Birthdate', 'Phone Number', 'Email Address', 'Home Address', 'Registered Date', 'Clinical Notes'];
-
     const escapeCSV = (val: string | null | undefined) => {
       if (!val) return '""';
-      const cleaned = String(val).replace(/"/g, '""');
-      return `"${cleaned}"`;
+      return `"${String(val).replace(/"/g, '""')}"`;
     };
 
     const rows = filteredAndSortedPatients.map(p => [
@@ -510,7 +440,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     setIsExportMenuOpen(false);
   };
 
-  // ─── EXPORT DIRECTORY TO PDF ───
   const handleExportPDF = () => {
     if (filteredAndSortedPatients.length === 0) {
       alert("No patient records available to export.");
@@ -549,10 +478,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
           th { background-color: #f1f5f9; color: #334155; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #cbd5e1; text-transform: uppercase; font-size: 11px; }
           td { padding: 9px 10px; border: 1px solid #cbd5e1; }
           tr:nth-child(even) { background-color: #f8fafc; }
-          @media print {
-            body { padding: 0; }
-            @page { margin: 1.5cm; }
-          }
         </style>
       </head>
       <body>
@@ -582,11 +507,7 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
             ${tableRows}
           </tbody>
         </table>
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 250);
-          };
-        </script>
+        <script>window.onload = function() { setTimeout(function() { window.print(); }, 250); };</script>
       </body>
       </html>
     `;
@@ -597,7 +518,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     setIsExportMenuOpen(false);
   };
 
-  // ─── EXPORT SINGLE PATIENT CHART (INCLUDING ODONTOGRAM) TO PDF ───
   const handlePrintSinglePatient = (patient: Patient) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -646,7 +566,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
           th { background-color: #f1f5f9; color: #334155; font-weight: bold; text-align: left; padding: 8px 10px; border: 1px solid #cbd5e1; }
           td { padding: 8px 10px; border: 1px solid #cbd5e1; }
           h3 { color: #0c4a6e; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-          @media print { body { padding: 0; } }
         </style>
       </head>
       <body>
@@ -677,11 +596,7 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
         <h3>Clinical Notes & Medical History</h3>
         <div class="notes-box">${patient.notes || 'No clinical notes recorded.'}</div>
 
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 250);
-          };
-        </script>
+        <script>window.onload = function() { setTimeout(function() { window.print(); }, 250); };</script>
       </body>
       </html>
     `;
@@ -694,14 +609,12 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
   return (
     <>
       <div className="fade-in">
-        
-        {/* ── Page Header & Controls ── */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between mb-8 gap-4">
           <div>
             <h1 className="font-serif text-3xl font-bold text-dental-900">Patient Directory</h1>
             <p className="text-gray-500 mt-1">Master list of all registered clinic profiles and dental charts.</p>
           </div>
-          
+           
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -728,7 +641,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
               </select>
             </div>
 
-            {/* ── Export Dropdown Button (Excel & PDF) ── */}
             <div className="relative">
               <button 
                 onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -739,25 +651,16 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
 
               {isExportMenuOpen && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-30" 
-                    onClick={() => setIsExportMenuOpen(false)} 
-                  />
+                  <div className="fixed inset-0 z-30" onClick={() => setIsExportMenuOpen(false)} />
                   <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-40 animate-fade-in-up divide-y divide-gray-50">
-                    <button
-                      onClick={handleExportExcel}
-                      className="w-full px-4 py-2.5 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition"
-                    >
+                    <button onClick={handleExportExcel} className="w-full px-4 py-2.5 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition">
                       <FileSpreadsheet className="w-4 h-4 text-green-600 shrink-0" />
                       <div>
                         <p className="text-gray-900 leading-none">Save as Excel</p>
                         <p className="text-[11px] text-gray-400 font-normal mt-0.5">Download .CSV spreadsheet</p>
                       </div>
                     </button>
-                    <button
-                      onClick={handleExportPDF}
-                      className="w-full px-4 py-2.5 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition"
-                    >
+                    <button onClick={handleExportPDF} className="w-full px-4 py-2.5 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition">
                       <Printer className="w-4 h-4 text-red-500 shrink-0" />
                       <div>
                         <p className="text-gray-900 leading-none">Save as PDF</p>
@@ -769,16 +672,12 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
               )}
             </div>
 
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-dental-600 hover:bg-dental-700 text-white px-6 py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
-            >
+            <button onClick={() => setIsAddModalOpen(true)} className="bg-dental-600 hover:bg-dental-700 text-white px-6 py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm whitespace-nowrap">
               <UserPlus className="w-4 h-4" /> Add Patient
             </button>
           </div>
         </div>
 
-        {/* ── Patient Table ── */}
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -793,19 +692,12 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={5} className="p-12 text-center text-gray-500 font-medium">Loading patients...</td>
-                  </tr>
+                  <tr><td colSpan={5} className="p-12 text-center text-gray-500 font-medium">Loading patients...</td></tr>
                 ) : filteredAndSortedPatients.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-12 text-center text-gray-500 font-medium">
-                      {searchTerm ? `No patients found matching "${searchTerm}"` : "No patients registered yet."}
-                    </td>
-                  </tr>
+                  <tr><td colSpan={5} className="p-12 text-center text-gray-500 font-medium">{searchTerm ? `No patients found matching "${searchTerm}"` : "No patients registered yet."}</td></tr>
                 ) : (
                   filteredAndSortedPatients.map((patient) => (
                     <tr key={patient.id} className="hover:bg-gray-50 transition group">
-                      
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border text-sm ${getAvatarColors(patient.id)}`}>
@@ -820,48 +712,25 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                           </div>
                         </div>
                       </td>
-
                       <td className="p-4">
                         <div className="space-y-1">
-                          {patient.phone ? (
-                            <p className="text-sm text-gray-600 flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-gray-400"/> {patient.phone}</p>
-                          ) : (
-                            <p className="text-sm text-gray-400 italic">No phone</p>
-                          )}
-                          {patient.email && (
-                            <p className="text-sm text-gray-600 flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-gray-400"/> {patient.email}</p>
-                          )}
+                          {patient.phone ? <p className="text-sm text-gray-600 flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-gray-400"/> {patient.phone}</p> : <p className="text-sm text-gray-400 italic">No phone</p>}
+                          {patient.email && <p className="text-sm text-gray-600 flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-gray-400"/> {patient.email}</p>}
                         </div>
                       </td>
-
                       <td className="p-4">
                         <p className="text-sm text-gray-600 flex items-center gap-2">
                           <Calendar className="w-3.5 h-3.5 text-gray-400" />
                           {new Date(patient.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </td>
-
                       <td className="p-4">
-                        <span className="bg-green-100 text-green-700 text-[10px] px-2.5 py-1 rounded-full font-bold">
-                          Active
-                        </span>
+                        <span className="bg-green-100 text-green-700 text-[10px] px-2.5 py-1 rounded-full font-bold">Active</span>
                       </td>
-
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button 
-                            onClick={() => openProfile(patient)}
-                            className="text-sm font-semibold text-dental-600 hover:text-dental-800 bg-dental-50 hover:bg-dental-100 px-4 py-2 rounded-lg transition"
-                          >
-                            View Profile
-                          </button>
-                          <button 
-                            onClick={() => handleDeletePatient(patient.id, patient.name)}
-                            className="text-sm font-semibold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition"
-                            title="Delete Patient"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <button onClick={() => openProfile(patient)} className="text-sm font-semibold text-dental-600 hover:text-dental-800 bg-dental-50 hover:bg-dental-100 px-4 py-2 rounded-lg transition">View Profile</button>
+                          <button onClick={() => handleDeletePatient(patient.id, patient.name)} className="text-sm font-semibold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition" title="Delete Patient"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </tr>
@@ -873,51 +742,27 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
         </div>
       </div>
 
-      {/* ── PDA-STYLE ADD PATIENT MODAL ── */}
+      {/* Add Patient Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
               <div>
                 <h3 className="font-serif text-xl font-bold text-dental-900">Philippine Dental Association Chart</h3>
                 <p className="text-sm text-gray-500 font-medium">New Patient Information Record</p>
               </div>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-1 border border-gray-200">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-1 border border-gray-200"><X className="w-5 h-5" /></button>
             </div>
-            
             <form onSubmit={handleAddPatient} className="p-6 overflow-y-auto flex-1 space-y-8">
-              
-              {/* SECTION 1: Patient Information */}
               <section>
-                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
-                  <Users className="w-5 h-5 text-dental-500" /> Patient Information Record
-                </h4>
+                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2 border-b border-gray-100 pb-2"><Users className="w-5 h-5 text-dental-500" /> Patient Information Record</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Last Name *</label>
-                    <input type="text" required value={newPatientForm.lastName} onChange={e => setNewPatientForm({...newPatientForm, lastName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">First Name *</label>
-                    <input type="text" required value={newPatientForm.firstName} onChange={e => setNewPatientForm({...newPatientForm, firstName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Middle Name</label>
-                    <input type="text" value={newPatientForm.middleName} onChange={e => setNewPatientForm({...newPatientForm, middleName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Birthdate</label>
-                    <input type="date" value={newPatientForm.birthdate} onChange={e => setNewPatientForm({...newPatientForm, birthdate: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none text-gray-700" />
-                  </div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Last Name *</label><input type="text" required value={newPatientForm.lastName} onChange={e => setNewPatientForm({...newPatientForm, lastName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">First Name *</label><input type="text" required value={newPatientForm.firstName} onChange={e => setNewPatientForm({...newPatientForm, firstName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Middle Name</label><input type="text" value={newPatientForm.middleName} onChange={e => setNewPatientForm({...newPatientForm, middleName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Birthdate</label><input type="date" value={newPatientForm.birthdate} onChange={e => setNewPatientForm({...newPatientForm, birthdate: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none text-gray-700" /></div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Age</label>
-                      <input type="number" value={newPatientForm.age} onChange={e => setNewPatientForm({...newPatientForm, age: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                    </div>
+                    <div><label className="block text-xs font-bold text-gray-700 mb-1">Age</label><input type="number" value={newPatientForm.age} onChange={e => setNewPatientForm({...newPatientForm, age: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
                     <div>
                       <label className="block text-xs font-bold text-gray-700 mb-1">Sex</label>
                       <select value={newPatientForm.sex} onChange={e => setNewPatientForm({...newPatientForm, sex: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none bg-white">
@@ -927,105 +772,30 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Nickname</label>
-                    <input type="text" value={newPatientForm.nickname} onChange={e => setNewPatientForm({...newPatientForm, nickname: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Home Address</label>
-                    <input type="text" value={newPatientForm.address} onChange={e => setNewPatientForm({...newPatientForm, address: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Occupation</label>
-                    <input type="text" value={newPatientForm.occupation} onChange={e => setNewPatientForm({...newPatientForm, occupation: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Mobile No.</label>
-                    <input type="tel" value={newPatientForm.phone} onChange={e => setNewPatientForm({...newPatientForm, phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">E-mail Address</label>
-                    <input type="email" value={newPatientForm.email} onChange={e => setNewPatientForm({...newPatientForm, email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Reason for Consultation</label>
-                    <input type="text" value={newPatientForm.reason} onChange={e => setNewPatientForm({...newPatientForm, reason: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                </div>
-              </section>
-
-              {/* SECTION 2: Dental History */}
-              <section>
-                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
-                  <ImageIcon className="w-5 h-5 text-purple-500" /> Dental History
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Previous Dentist</label>
-                    <input type="text" placeholder="Dr. Name" value={newPatientForm.previousDentist} onChange={e => setNewPatientForm({...newPatientForm, previousDentist: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Last Dental Visit</label>
-                    <input type="date" value={newPatientForm.lastVisit} onChange={e => setNewPatientForm({...newPatientForm, lastVisit: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none text-gray-700" />
-                  </div>
-                </div>
-              </section>
-
-              {/* SECTION 3: Medical History Overview */}
-              <section>
-                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
-                  <Activity className="w-5 h-5 text-red-500" /> Medical History Overview
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Name of Physician</label>
-                    <input type="text" value={newPatientForm.physician} onChange={e => setNewPatientForm({...newPatientForm, physician: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Blood Type</label>
-                    <input type="text" placeholder="e.g. O+" value={newPatientForm.bloodType} onChange={e => setNewPatientForm({...newPatientForm, bloodType: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Blood Pressure</label>
-                    <input type="text" placeholder="e.g. 120/80" value={newPatientForm.bloodPressure} onChange={e => setNewPatientForm({...newPatientForm, bloodPressure: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-                  
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Allergies (Anesthetic, Penicillin, Latex, etc.)</label>
-                    <input type="text" placeholder="List any known allergies..." value={newPatientForm.allergies} onChange={e => setNewPatientForm({...newPatientForm, allergies: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" />
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Existing Medical Conditions / Current Medications</label>
-                    <textarea rows={3} placeholder="Heart disease, Diabetes, Asthma, Pregnancy, Bleeding problems, etc." value={newPatientForm.conditions} onChange={e => setNewPatientForm({...newPatientForm, conditions: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none resize-none"></textarea>
-                    <p className="text-[10px] text-gray-400 mt-1 italic">This data will be compiled securely into the patient's Clinical Notes for quick reference.</p>
-                  </div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Nickname</label><input type="text" value={newPatientForm.nickname} onChange={e => setNewPatientForm({...newPatientForm, nickname: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div className="md:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Home Address</label><input type="text" value={newPatientForm.address} onChange={e => setNewPatientForm({...newPatientForm, address: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Occupation</label><input type="text" value={newPatientForm.occupation} onChange={e => setNewPatientForm({...newPatientForm, occupation: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Mobile No.</label><input type="tel" value={newPatientForm.phone} onChange={e => setNewPatientForm({...newPatientForm, phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">E-mail Address</label><input type="email" value={newPatientForm.email} onChange={e => setNewPatientForm({...newPatientForm, email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
+                  <div><label className="block text-xs font-bold text-gray-700 mb-1">Reason for Consultation</label><input type="text" value={newPatientForm.reason} onChange={e => setNewPatientForm({...newPatientForm, reason: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-dental-500 outline-none" /></div>
                 </div>
               </section>
 
               <div className="pt-4 border-t border-gray-100 shrink-0">
-                <button type="submit" className="w-full bg-dental-600 hover:bg-dental-700 text-white font-bold py-3.5 rounded-xl transition shadow-md">
-                  Save Patient Record
-                </button>
+                <button type="submit" className="w-full bg-dental-600 hover:bg-dental-700 text-white font-bold py-3.5 rounded-xl transition shadow-md">Save Patient Record</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── Patient Profile, Interactive Odontogram & Medical Records Modal ── */}
+      {/* Patient Profile Modal */}
       {selectedPatient && (
         <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col">
-            
-            {/* Modal Top Header */}
             <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-gray-50/80 shrink-0">
               <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold border ${getAvatarColors(selectedPatient.id)}`}>
-                  {getInitials(selectedPatient.name)}
-                </div>
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold border ${getAvatarColors(selectedPatient.id)}`}>{getInitials(selectedPatient.name)}</div>
                 <div>
                   <h3 className="font-serif text-2xl font-bold text-dental-900">{selectedPatient.name}</h3>
                   <p className="text-gray-500 font-medium text-sm flex flex-wrap items-center gap-4 mt-0.5">
@@ -1035,49 +805,19 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <button 
-                  onClick={() => handlePrintSinglePatient(selectedPatient)}
-                  className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                  title="Save Individual Patient Chart as PDF"
-                >
-                  <Printer className="w-4 h-4 text-dental-600" /> Save as PDF
-                </button>
-                <button onClick={() => setSelectedPatient(null)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-2 border border-gray-200 transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handlePrintSinglePatient(selectedPatient)} className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"><Printer className="w-4 h-4 text-dental-600" /> Save as PDF</button>
+                <button onClick={() => setSelectedPatient(null)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-2 border border-gray-200 transition-colors"><X className="w-5 h-5" /></button>
               </div>
             </div>
 
-            {/* Navigation Tabs inside Patient Profile */}
             <div className="px-6 bg-white border-b border-gray-100 flex gap-6 shrink-0">
-              <button
-                onClick={() => setActiveProfileTab('odontogram')}
-                className={`py-3.5 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
-                  activeProfileTab === 'odontogram'
-                    ? 'border-dental-600 text-dental-900'
-                    : 'border-transparent text-gray-400 hover:text-gray-700'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 text-dental-600" /> Dental Chart (Odontogram)
-              </button>
-              <button
-                onClick={() => setActiveProfileTab('records')}
-                className={`py-3.5 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
-                  activeProfileTab === 'records'
-                    ? 'border-dental-600 text-dental-900'
-                    : 'border-transparent text-gray-400 hover:text-gray-700'
-                }`}
-              >
-                <FileText className="w-4 h-4 text-dental-600" /> Clinical Notes & X-Ray Images
-              </button>
+              <button onClick={() => setActiveProfileTab('odontogram')} className={`py-3.5 text-sm font-bold border-b-2 transition flex items-center gap-2 ${activeProfileTab === 'odontogram' ? 'border-dental-600 text-dental-900' : 'border-transparent text-gray-400 hover:text-gray-700'}`}><Sparkles className="w-4 h-4 text-dental-600" /> Dental Chart (Odontogram)</button>
+              <button onClick={() => setActiveProfileTab('records')} className={`py-3.5 text-sm font-bold border-b-2 transition flex items-center gap-2 ${activeProfileTab === 'records' ? 'border-dental-600 text-dental-900' : 'border-transparent text-gray-400 hover:text-gray-700'}`}><FileText className="w-4 h-4 text-dental-600" /> Clinical Notes & X-Ray Images</button>
             </div>
             
-            {/* ── TAB 1: INTERACTIVE DENTAL CHART (ODONTOGRAM) ── */}
             {activeProfileTab === 'odontogram' ? (
               <div className="flex-1 overflow-y-auto bg-gray-50 p-6 space-y-6">
-                
-                {/* Top Summary Banner & Interactive FDI Tooth Diagram */}
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-gray-100">
                     <div>
@@ -1085,20 +825,11 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                       <p className="text-xs text-gray-500 mt-0.5">Interactive FDI Two-Digit Odontogram — Click any tooth to record or review its condition.</p>
                     </div>
                     <div className="flex items-center gap-8 bg-gray-50 px-4 py-2.5 rounded-xl border border-gray-100">
-                      <div>
-                        <span className="block text-[11px] font-semibold text-gray-400 uppercase">Patient ID</span>
-                        <span className="font-bold text-sm text-gray-900">{formatId(selectedPatient.id, selectedPatient.created_at)}</span>
-                      </div>
-                      <div>
-                        <span className="block text-[11px] font-semibold text-gray-400 uppercase">Chart Date</span>
-                        <span className="font-bold text-sm text-gray-900">
-                          {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                        </span>
-                      </div>
+                      <div><span className="block text-[11px] font-semibold text-gray-400 uppercase">Patient ID</span><span className="font-bold text-sm text-gray-900">{formatId(selectedPatient.id, selectedPatient.created_at)}</span></div>
+                      <div><span className="block text-[11px] font-semibold text-gray-400 uppercase">Chart Date</span><span className="font-bold text-sm text-gray-900">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div>
                     </div>
                   </div>
 
-                  {/* Interactive 32-Tooth Visual Odontogram */}
                   <div className="mt-5">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                       <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Interactive Tooth Map (FDI System)</span>
@@ -1112,7 +843,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                     </div>
 
                     <div className="bg-gray-50/80 border border-gray-200/80 rounded-2xl p-4 space-y-4 overflow-x-auto">
-                      {/* Upper Arch */}
                       <div>
                         <p className="text-[10px] font-bold text-center text-gray-400 uppercase tracking-widest mb-2">Upper Arch (Maxillary)</p>
                         <div className="flex justify-center items-center gap-1.5 min-w-[640px]">
@@ -1121,17 +851,8 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                               const recorded = dentalChartEntries.find(e => e.toothNumber === t);
                               const isSelected = selectedTooth === t;
                               return (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() => handleSelectTooth(t)}
-                                  title={`${t} - ${FDI_TEETH[t]}${recorded ? ` (${recorded.condition})` : ''}`}
-                                  className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${
-                                    getToothBadgeStyle(recorded?.condition)
-                                  } ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}
-                                >
-                                  <span>{t}</span>
-                                  <span className="w-1.5 h-1.5 rounded-full mt-1 bg-current opacity-60"></span>
+                                <button key={t} type="button" onClick={() => handleSelectTooth(t)} className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${getToothBadgeStyle(recorded?.condition)} ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}>
+                                  <span>{t}</span><span className="w-1.5 h-1.5 rounded-full mt-1 bg-current opacity-60"></span>
                                 </button>
                               );
                             })}
@@ -1141,17 +862,8 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                               const recorded = dentalChartEntries.find(e => e.toothNumber === t);
                               const isSelected = selectedTooth === t;
                               return (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() => handleSelectTooth(t)}
-                                  title={`${t} - ${FDI_TEETH[t]}${recorded ? ` (${recorded.condition})` : ''}`}
-                                  className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${
-                                    getToothBadgeStyle(recorded?.condition)
-                                  } ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}
-                                >
-                                  <span>{t}</span>
-                                  <span className="w-1.5 h-1.5 rounded-full mt-1 bg-current opacity-60"></span>
+                                <button key={t} type="button" onClick={() => handleSelectTooth(t)} className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${getToothBadgeStyle(recorded?.condition)} ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}>
+                                  <span>{t}</span><span className="w-1.5 h-1.5 rounded-full mt-1 bg-current opacity-60"></span>
                                 </button>
                               );
                             })}
@@ -1159,7 +871,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                         </div>
                       </div>
 
-                      {/* Lower Arch */}
                       <div className="pt-2 border-t border-gray-200/70">
                         <div className="flex justify-center items-center gap-1.5 min-w-[640px]">
                           <div className="flex gap-1 pr-3 border-r-2 border-dashed border-gray-300">
@@ -1167,17 +878,8 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                               const recorded = dentalChartEntries.find(e => e.toothNumber === t);
                               const isSelected = selectedTooth === t;
                               return (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() => handleSelectTooth(t)}
-                                  title={`${t} - ${FDI_TEETH[t]}${recorded ? ` (${recorded.condition})` : ''}`}
-                                  className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${
-                                    getToothBadgeStyle(recorded?.condition)
-                                  } ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full mb-1 bg-current opacity-60"></span>
-                                  <span>{t}</span>
+                                <button key={t} type="button" onClick={() => handleSelectTooth(t)} className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${getToothBadgeStyle(recorded?.condition)} ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}>
+                                  <span className="w-1.5 h-1.5 rounded-full mb-1 bg-current opacity-60"></span><span>{t}</span>
                                 </button>
                               );
                             })}
@@ -1187,17 +889,8 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                               const recorded = dentalChartEntries.find(e => e.toothNumber === t);
                               const isSelected = selectedTooth === t;
                               return (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() => handleSelectTooth(t)}
-                                  title={`${t} - ${FDI_TEETH[t]}${recorded ? ` (${recorded.condition})` : ''}`}
-                                  className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${
-                                    getToothBadgeStyle(recorded?.condition)
-                                  } ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full mb-1 bg-current opacity-60"></span>
-                                  <span>{t}</span>
+                                <button key={t} type="button" onClick={() => handleSelectTooth(t)} className={`w-9 h-11 rounded-lg border text-xs font-bold flex flex-col items-center justify-center transition-all ${getToothBadgeStyle(recorded?.condition)} ${isSelected ? 'ring-2 ring-dental-600 ring-offset-2 scale-105 shadow-sm' : ''}`}>
+                                  <span className="w-1.5 h-1.5 rounded-full mb-1 bg-current opacity-60"></span><span>{t}</span>
                                 </button>
                               );
                             })}
@@ -1209,107 +902,66 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                   </div>
                 </div>
 
-                {/* Bottom Grid: Tooth Details Input Form + Live Entry Preview & Saved History */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  
-                  {/* Left Column: Tooth Details Form */}
+                  {/* Tooth Details Form */}
                   <form onSubmit={handleSaveToothEntry} className="lg:col-span-6 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h5 className="font-serif text-lg font-bold text-gray-900 border-b border-gray-100 pb-2.5">
-                      Tooth Details
-                    </h5>
+                    <h5 className="font-serif text-lg font-bold text-gray-900 border-b border-gray-100 pb-2.5">Tooth Details</h5>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">Selected tooth number</label>
-                      <select
-                        value={selectedTooth}
-                        onChange={(e) => handleSelectTooth(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none"
-                      >
-                        {Object.entries(FDI_TEETH).map(([num, label]) => (
-                          <option key={num} value={num}>
-                            {num} – {label}
-                          </option>
-                        ))}
+                      <select value={selectedTooth} onChange={(e) => handleSelectTooth(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none">
+                        {Object.entries(FDI_TEETH).map(([num, label]) => (<option key={num} value={num}>{num} – {label}</option>))}
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">Tooth condition</label>
-                      <select
-                        value={toothCondition}
-                        onChange={(e) => setToothCondition(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none"
-                      >
-                        {TOOTH_CONDITIONS.map(cond => (
-                          <option key={cond} value={cond}>{cond}</option>
-                        ))}
+                      <select value={toothCondition} onChange={(e) => setToothCondition(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none">
+                        <option value="" disabled>-- Select condition --</option>
+                        {TOOTH_CONDITIONS.map(cond => (<option key={cond} value={cond}>{cond}</option>))}
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">Treatment</label>
-                      <select
-                        value={toothTreatment}
-                        onChange={(e) => setToothTreatment(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none"
-                      >
-                        {TOOTH_TREATMENTS.map(treat => (
-                          <option key={treat} value={treat}>{treat}</option>
-                        ))}
+                      <select value={toothTreatment} onChange={(e) => setToothTreatment(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none">
+                        <option value="" disabled>-- Select treatment --</option>
+                        {TOOTH_TREATMENTS.map(treat => (<option key={treat} value={treat}>{treat}</option>))}
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">Dentist's notes</label>
-                      <textarea
-                        rows={3}
-                        value={dentistNotes}
-                        onChange={(e) => setDentistNotes(e.target.value)}
-                        placeholder="e.g. Caries observed; for dentist evaluation."
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none resize-none"
-                      />
+                      <textarea rows={3} value={dentistNotes} onChange={(e) => setDentistNotes(e.target.value)} placeholder="e.g. Caries observed; for dentist evaluation." className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-800 bg-white focus:ring-2 focus:ring-dental-500 outline-none resize-none" />
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={isSavingTooth}
-                      className="w-full bg-dental-600 hover:bg-dental-700 text-white font-bold py-3 rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
+                    <button type="submit" disabled={isSavingTooth} className="w-full bg-dental-600 hover:bg-dental-700 text-white font-bold py-3 rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2 disabled:opacity-50">
                       <CheckCircle2 className="w-4 h-4" />
                       {isSavingTooth ? 'Saving to Patient Record...' : `Save Tooth #${selectedTooth} Record`}
                     </button>
                   </form>
 
-                  {/* Right Column: Preview of Entry + Recorded Tooth History */}
+                  {/* Preview & History */}
                   <div className="lg:col-span-6 flex flex-col gap-6">
-                    
-                    {/* Live Preview Card matching reference screenshot */}
                     <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                       <h5 className="font-serif text-base font-bold text-gray-900 mb-3">Preview of entry</h5>
                       <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-4 flex items-start justify-between gap-4">
                         <div className="space-y-1.5 text-sm">
-                          <p className="font-bold text-gray-900 text-base">
-                            Tooth No. {selectedTooth} <span className="text-xs font-normal text-gray-500">({FDI_TEETH[selectedTooth]})</span>
-                          </p>
-                          <p className="text-gray-700">
-                            <span className="font-bold text-gray-900">Treatment:</span> {toothTreatment}
-                          </p>
-                          <p className="text-gray-700">
-                            <span className="font-bold text-gray-900">Notes:</span> {dentistNotes || 'None provided'}
-                          </p>
+                          <p className="font-bold text-gray-900 text-base">Tooth No. {selectedTooth} <span className="text-xs font-normal text-gray-500">({FDI_TEETH[selectedTooth]})</span></p>
+                          <p className="text-gray-700"><span className="font-bold text-gray-900">Treatment:</span> {toothTreatment || <span className="italic text-gray-400">None selected</span>}</p>
+                          <p className="text-gray-700"><span className="font-bold text-gray-900">Notes:</span> {dentistNotes || <span className="italic text-gray-400">None provided</span>}</p>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 ${getConditionPillStyle(toothCondition)}`}>
-                          {toothCondition}
-                        </span>
+                        {toothCondition ? (
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 ${getConditionPillStyle(toothCondition)}`}>{toothCondition}</span>
+                        ) : (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold shrink-0 bg-gray-200 text-gray-500">No Condition</span>
+                        )}
                       </div>
                     </div>
 
-                    {/* Recorded Dental Chart History List */}
                     <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-3">
-                        <h5 className="font-serif text-base font-bold text-gray-900 flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-dental-600" /> Recorded Tooth History
-                        </h5>
+                        <h5 className="font-serif text-base font-bold text-gray-900 flex items-center gap-2"><Clock className="w-4 h-4 text-dental-600" /> Recorded Tooth History</h5>
                         <span className="text-xs font-bold text-gray-400">{dentalChartEntries.length} Teeth Charted</span>
                       </div>
 
@@ -1321,104 +973,56 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                       ) : (
                         <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
                           {dentalChartEntries.map(entry => (
-                            <div
-                              key={entry.id}
-                              onClick={() => handleSelectTooth(entry.toothNumber)}
-                              className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-white hover:border-dental-200 transition cursor-pointer flex items-start justify-between gap-3"
-                            >
+                            <div key={entry.id} onClick={() => handleSelectTooth(entry.toothNumber)} className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-white hover:border-dental-200 transition cursor-pointer flex items-start justify-between gap-3">
                               <div className="space-y-0.5 text-xs">
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-sm text-dental-900">Tooth #{entry.toothNumber}</span>
                                   <span className="text-gray-500 font-medium">({entry.toothName})</span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getConditionPillStyle(entry.condition)}`}>
-                                    {entry.condition}
-                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getConditionPillStyle(entry.condition)}`}>{entry.condition}</span>
                                 </div>
                                 <p className="text-gray-700 font-medium">Treatment: {entry.treatment}</p>
                                 <p className="text-gray-500">{entry.dentistNotes}</p>
                                 <p className="text-[10px] text-gray-400 pt-0.5">{entry.date}</p>
                               </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteToothEntry(entry.toothNumber);
-                                }}
-                                className="text-gray-400 hover:text-red-600 p-1 rounded-lg transition"
-                                title="Remove tooth entry"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteToothEntry(entry.toothNumber); }} className="text-gray-400 hover:text-red-600 p-1 rounded-lg transition" title="Remove tooth entry"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
-
                   </div>
                 </div>
-
               </div>
             ) : (
-              /* ── TAB 2: CLINICAL NOTES & MEDICAL IMAGES ── */
               <div className="flex-1 overflow-y-auto bg-gray-50 p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                {/* LEFT COLUMN: CLINICAL NOTES */}
                 <div className="flex flex-col h-full">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-serif text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-dental-500" /> Clinical Notes
-                    </h4>
+                    <h4 className="font-serif text-lg font-bold text-gray-900 flex items-center gap-2"><FileText className="w-5 h-5 text-dental-500" /> Clinical Notes</h4>
                     {!isEditingNotes ? (
-                      <button 
-                        onClick={() => setIsEditingNotes(true)}
-                        className="text-sm font-semibold text-dental-600 hover:text-dental-800 flex items-center gap-1"
-                      >
-                        <Edit2 className="w-3 h-3" /> Edit Notes
-                      </button>
+                      <button onClick={() => setIsEditingNotes(true)} className="text-sm font-semibold text-dental-600 hover:text-dental-800 flex items-center gap-1"><Edit2 className="w-3 h-3" /> Edit Notes</button>
                     ) : (
-                      <button 
-                        onClick={handleSaveNotes}
-                        disabled={isSavingNotes}
-                        className="text-sm font-semibold text-green-600 hover:text-green-800 flex items-center gap-1 bg-green-50 px-3 py-1 rounded-md"
-                      >
-                        <Save className="w-3 h-3" /> {isSavingNotes ? 'Saving...' : 'Save Notes'}
-                      </button>
+                      <button onClick={handleSaveNotes} disabled={isSavingNotes} className="text-sm font-semibold text-green-600 hover:text-green-800 flex items-center gap-1 bg-green-50 px-3 py-1 rounded-md"><Save className="w-3 h-3" /> {isSavingNotes ? 'Saving...' : 'Save Notes'}</button>
                     )}
                   </div>
-
                   <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[300px]">
                     {isEditingNotes ? (
-                      <textarea 
-                        value={editedNotes}
-                        onChange={(e) => setEditedNotes(e.target.value)}
-                        placeholder="Enter last service date, treatments performed, allergies, or any relevant medical history..."
-                        className="w-full h-full flex-1 p-4 outline-none resize-none text-sm text-gray-700 bg-yellow-50/30 focus:bg-white transition-colors font-mono"
-                      />
+                      <textarea value={editedNotes} onChange={(e) => setEditedNotes(e.target.value)} placeholder="Enter clinical notes..." className="w-full h-full flex-1 p-4 outline-none resize-none text-sm text-gray-700 bg-yellow-50/30 focus:bg-white transition-colors font-mono" />
                     ) : (
                       <div className="w-full h-full flex-1 p-4 text-sm text-gray-700 whitespace-pre-wrap overflow-y-auto font-mono">
-                        {selectedPatient.notes ? (
-                          selectedPatient.notes
-                        ) : (
-                          <span className="text-gray-400 italic font-sans">No clinical notes recorded yet. Click 'Edit Notes' to add history.</span>
-                        )}
+                        {selectedPatient.notes ? selectedPatient.notes : <span className="text-gray-400 italic font-sans">No clinical notes recorded yet. Click 'Edit Notes' to add history.</span>}
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN: MEDICAL IMAGES */}
                 <div className="flex flex-col h-full">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-serif text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <ImageIcon className="w-5 h-5 text-dental-500" /> Records & Images
-                    </h4>
+                    <h4 className="font-serif text-lg font-bold text-gray-900 flex items-center gap-2"><ImageIcon className="w-5 h-5 text-dental-500" /> Records & Images</h4>
                     <label className={`cursor-pointer bg-dental-600 hover:bg-dental-700 text-white px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-2 text-xs shadow-sm ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       <Upload className="w-3 h-3" /> {isUploading ? 'Uploading...' : 'Upload'}
                       <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={isUploading} />
                     </label>
                   </div>
-
                   <div className="flex-1 bg-white border border-gray-200 rounded-2xl p-4 shadow-sm overflow-y-auto min-h-[300px]">
                     {patientImages.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-center p-6">
@@ -1430,22 +1034,15 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                       <div className="grid grid-cols-2 gap-3">
                         {patientImages.map(img => (
                           <div key={img.id} className="group relative aspect-square bg-gray-100 border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
-                            <img 
-                              src={img.image_url} 
-                              alt="Medical record" 
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 bg-gray-900/0 group-hover:bg-gray-900/10 transition-colors"></div>
+                            <img src={img.image_url} alt="Medical record" className="w-full h-full object-cover" />
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
                 </div>
-
               </div>
             )}
-
           </div>
         </div>
       )}
