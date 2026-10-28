@@ -40,10 +40,7 @@ export default function AdminQueue() {
   const [weekAppointments, setWeekAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(false);
   
-  // Track selected appointment from the dropdown
   const [selectedAptId, setSelectedAptId] = useState<string>('');
-
-  // Removed email from manual form state
   const [manualForm, setManualForm] = useState({ name: '', phone: '', service: 'General Checkup' });
   const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
@@ -52,11 +49,31 @@ export default function AdminQueue() {
   const [isSendingSms, setIsSendingSms] = useState(false);
 
   const [smsQuota, setSmsQuota] = useState({ balance: 188, total: 202 });
+  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin'); // ── AUDIT STATE ──
 
   useEffect(() => {
     fetchQueue();
     fetchSmsQuota();
+    fetchAdminSession();
   }, []);
+
+  // ── NEW: Fetch Admin Email for Audit Log ──
+  const fetchAdminSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.email) {
+      setAdminEmail(session.user.email);
+    }
+  };
+
+  // ── NEW: Reusable Audit Log Helper ──
+  const logAuditAction = async (action: string, patientName: string, details: string) => {
+    await supabase.from('audit_logs').insert([{
+      admin_email: adminEmail,
+      action: action,
+      patient_name: patientName,
+      details: details
+    }]);
+  };
 
   const fetchSmsQuota = async () => {
     const { data, error } = await supabase
@@ -138,6 +155,9 @@ export default function AdminQueue() {
     }]);
 
     if (!error) {
+      // 👉 AUDIT LOG
+      await logAuditAction('Add to Queue', apt.name, `Added scheduled appointment (Ticket: ${newTicket}) to the live waiting queue.`);
+      
       setIsModalOpen(false);
       fetchQueue();
     } else {
@@ -161,6 +181,9 @@ export default function AdminQueue() {
     }]);
 
     if (!error) {
+      // 👉 AUDIT LOG
+      await logAuditAction('Add Manual Queue', manualForm.name, `Manually added walk-in (Ticket: ${newTicket}) to the live waiting queue for ${manualForm.service}.`);
+      
       setIsModalOpen(false);
       setManualForm({ name: '', phone: '', service: 'General Checkup' }); 
       fetchQueue();
@@ -178,6 +201,10 @@ export default function AdminQueue() {
       await supabase.from('queue').update({ status: 'completed' }).eq('id', currentPatient.id);
     }
     await supabase.from('queue').update({ status: 'serving' }).eq('id', nextPatient.id);
+    
+    // 👉 AUDIT LOG
+    await logAuditAction('Call Next Patient', nextPatient.name, `Called ticket ${nextPatient.ticket} to be served.`);
+    
     fetchQueue();
   };
 
@@ -185,6 +212,10 @@ export default function AdminQueue() {
     if (currentPatient) {
       setIsSaved(true);
       await supabase.from('queue').update({ status: 'completed' }).eq('id', currentPatient.id);
+      
+      // 👉 AUDIT LOG
+      await logAuditAction('Complete Treatment', currentPatient.name, `Marked treatment for ticket ${currentPatient.ticket} as completed.`);
+      
       setTimeout(() => {
         setIsSaved(false);
         setCurrentPatient(null);
@@ -193,6 +224,22 @@ export default function AdminQueue() {
     }
   };
 
+  // ── NEW: FIXED NO SHOW LOGIC ──
+  const handleNoShow = async () => {
+    if (!currentPatient) return;
+    
+    if (window.confirm(`Are you sure you want to mark ${currentPatient.name} as a No Show? This will remove them from the active serving slot.`)) {
+      await supabase.from('queue').update({ status: 'no_show' }).eq('id', currentPatient.id);
+      
+      // 👉 AUDIT LOG
+      await logAuditAction('No Show', currentPatient.name, `Marked ticket ${currentPatient.ticket} as a No Show.`);
+      
+      setCurrentPatient(null);
+      fetchQueue();
+    }
+  };
+
+  // ── 🛡️ GRACEFUL DEGRADATION: MANUAL CALL FALLBACK ──
   const handleNotifySms = async () => {
     if (!currentPatient) return;
 
@@ -201,13 +248,15 @@ export default function AdminQueue() {
       setIsNotifyOpen(false);
       return;
     }
-    if (smsQuota.balance <= 0) {
-      alert("SMS credits exhausted! Please load more credits in your IPROG dashboard.");
-      return;
-    }
 
     setIsSendingSms(true);
+    const messageBody = `Ticket ${currentPatient.ticket}: Your turn for ${currentPatient.service} in 10 mins. Please proceed to waiting area.`;
+
     try {
+      if (smsQuota.balance <= 0) {
+        throw new Error("Insufficient SMS credits limit reached.");
+      }
+
       let cleanPhone = currentPatient.phone.replace(/\D/g, ''); 
       if (cleanPhone.startsWith('0')) {
         cleanPhone = '63' + cleanPhone.substring(1);
@@ -215,13 +264,10 @@ export default function AdminQueue() {
         cleanPhone = '63' + cleanPhone;
       }
       const formattedPhone = '+' + cleanPhone;
-      const messageBody = `Ticket ${currentPatient.ticket}: Your turn for ${currentPatient.service} in 10 mins. Please proceed to waiting area.`;
 
       const response = await fetch('https://samueladc.onrender.com/api/send-sms', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone_number: formattedPhone,
           message: messageBody
@@ -231,22 +277,24 @@ export default function AdminQueue() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error?.message || "Backend request failed");
+        throw new Error(result.error?.message || "Backend IPROG request failed");
       }
 
       const newBalance = Math.max(0, smsQuota.balance - 1);
       setSmsQuota(prev => ({ ...prev, balance: newBalance }));
+      await supabase.from('clinic_settings').update({ sms_balance: newBalance }).eq('id', 1);
 
-      await supabase
-        .from('clinic_settings')
-        .update({ sms_balance: newBalance })
-        .eq('id', 1);
-
-      alert(`SMS Alert sent to ${currentPatient.name} at ${currentPatient.phone}.`);
+      // 👉 AUDIT LOG
+      await logAuditAction('Send SMS', currentPatient.name, `Successfully sent SMS alert to ${formattedPhone}.`);
       
-    } catch (error) {
-      console.error("Failed to send SMS:", error);
-      alert("Error sending SMS. Check your backend terminal for details.");
+      alert(`SMS Alert successfully sent to ${currentPatient.name}.`);
+
+    } catch (error: any) {
+      console.warn("SMS Alert Failed, initializing Manual Fallback...", error.message);
+      
+      // THE FALLBACK: Admin UI Alert
+      alert(`⚠️ SMS ALERT FAILED (API Offline or 0 Credits).\n\nFALLBACK PROCEDURE:\nPlease manually call ${currentPatient.name} at ${currentPatient.phone} to notify them of their turn.`);
+      
     } finally {
       setIsSendingSms(false);
       setIsNotifyOpen(false);
@@ -256,7 +304,6 @@ export default function AdminQueue() {
   const smsUsed = Math.max(0, smsQuota.total - smsQuota.balance);
   const smsPercentage = Math.round((smsUsed / smsQuota.total) * 100);
 
-  // Filter out appointments that are already in the waiting queue or currently being served
   const availableAppointments = weekAppointments.filter(
     apt => !queue.some(q => q.name === apt.name) && currentPatient?.name !== apt.name
   );
@@ -333,7 +380,7 @@ export default function AdminQueue() {
                           className="flex items-center gap-2 text-sm font-semibold text-gray-800 hover:text-blue-600 transition disabled:opacity-50"
                         >
                           <MessageSquare className="w-4 h-4 text-blue-500 shrink-0" />
-                          <span>{isSendingSms ? 'Sending SMS...' : 'Send SMS Alert'}</span>
+                          <span>{isSendingSms ? 'Sending...' : 'Send SMS / Alert'}</span>
                         </button>
                         <span className="text-[11px] font-bold text-blue-600">{smsQuota.balance} left</span>
                       </div>
@@ -373,8 +420,9 @@ export default function AdminQueue() {
                     <><CheckCircle className="w-4 h-4 text-accent-600" /> Done</>
                   )}
                 </button>
+                {/* ── UPDATED: Hooked up handleNoShow ── */}
                 <button 
-                  onClick={() => {}} 
+                  onClick={handleNoShow} 
                   disabled={!currentPatient}
                   className="bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-100 transition flex items-center justify-center gap-2 disabled:opacity-50"
                 >
@@ -454,7 +502,6 @@ export default function AdminQueue() {
             
             <div className="p-5 overflow-y-auto bg-gray-50/50 flex-grow">
               
-              {/* ── DROPDOWN TAB ── */}
               {modalTab === 'appointments' && (
                 <div className="space-y-4">
                   <div>
@@ -488,10 +535,9 @@ export default function AdminQueue() {
                     onClick={() => {
                       const apt = availableAppointments.find(a => a.id.toString() === selectedAptId.toString());
                       if (apt) {
-                        // Double check confirmation
                         if (window.confirm(`Are you sure you want to add ${apt.name} to the live queue?`)) {
                           addAppointmentToQueue(apt);
-                          setSelectedAptId(''); // Reset dropdown for next time
+                          setSelectedAptId(''); 
                         }
                       }
                     }}
@@ -503,7 +549,6 @@ export default function AdminQueue() {
                 </div>
               )}
 
-              {/* ── MANUAL ENTRY (Email Removed) ── */}
               {modalTab === 'manual' && (
                 <form onSubmit={handleManualSubmit} className="space-y-3.5">
                   <div>

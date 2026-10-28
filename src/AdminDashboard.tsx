@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Chart, registerables } from 'chart.js';
-import { supabase } from './lib/supabase'; // Adjust path if needed
+import { supabase } from './lib/supabase'; 
 import { 
   Clock, CalendarCheck, UserPlus, 
-  ArrowRight, CalendarPlus, MonitorPlay, PlusCircle, Check
+  ArrowRight, CalendarPlus, MonitorPlay, PlusCircle, Check,
+  ShieldCheck, Archive // ── NEW ICONS FOR COMPLIANCE ──
 } from 'lucide-react';
 
 Chart.register(...registerables);
 
-// Define types for our fetched data
 type TodayAppointment = {
   id: number;
   name: string;
@@ -35,10 +35,14 @@ export default function AdminDashboard() {
   const [todayCount, setTodayCount] = useState(0);
   const [newPatientsCount, setNewPatientsCount] = useState(0); 
 
-  // Live Tasks State
+  // Tasks State
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  // ── NEW: COMPLIANCE STATE ──
+  const [archivableCount, setArchivableCount] = useState(0);
+  const [isArchiving, setIsArchiving] = useState(false);
 
   // Chart Refs
   const lineChartRef = useRef<HTMLCanvasElement>(null);
@@ -46,17 +50,16 @@ export default function AdminDashboard() {
   const lineChartInstance = useRef<Chart | null>(null);
   const doughnutChartInstance = useRef<Chart | null>(null);
 
-  // Live Clock Effect
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch Live Data
   useEffect(() => {
     fetchTodayData();
     fetchTasks();
     fetchNewPatients();
+    fetchArchivableCount(); // Fetch old records on load
   }, []);
 
   const fetchTodayData = async () => {
@@ -90,6 +93,50 @@ export default function AdminDashboard() {
     if (data && !error) {
       setNewPatientsCount(data.length);
     }
+  };
+
+  // ─── DATA PRIVACY ACT COMPLIANCE LOGIC ───
+  const fetchArchivableCount = async () => {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
+    const cutoffIso = sixMonthsAgo.toISOString();
+
+    // Check old appointments
+    const { count: apptCount } = await supabase
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['completed', 'cancelled', 'no_show'])
+      .lt('appointment_date', cutoffDate);
+
+    // Check old queue records
+    const { count: queueCount } = await supabase
+      .from('queue')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['completed', 'no_show'])
+      .lt('created_at', cutoffIso);
+
+    setArchivableCount((apptCount || 0) + (queueCount || 0));
+  };
+
+  const handleArchiveData = async () => {
+    if (archivableCount === 0) return;
+    
+    if (!window.confirm(`RA 10173 Compliance: Are you sure you want to securely move ${archivableCount} old records to cold storage?`)) return;
+
+    setIsArchiving(true);
+    
+    // Call the SQL Function you just created in Supabase
+    const { error } = await supabase.rpc('archive_old_records');
+
+    if (!error) {
+      alert("Data Privacy Compliance Sweep Successful! Records moved to secure archive.");
+      setArchivableCount(0); // Reset count
+    } else {
+      alert("Failed to archive records: " + error.message);
+    }
+    
+    setIsArchiving(false);
   };
 
   // ─── TASKS LOGIC ───
@@ -130,7 +177,7 @@ export default function AdminDashboard() {
       .eq('id', id);
   };
 
-  // Charts Effect (Zeroed out data)
+  // Charts Effect
   useEffect(() => {
     Chart.defaults.font.family = "'Inter', sans-serif";
     Chart.defaults.color = '#64748b';
@@ -226,10 +273,9 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── Stats Grid (Changed to 2 columns with bold blue theme) ── */}
+      {/* ── Stats Grid ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
         
-        {/* ── Appointments Today (BLUE CARD) ── */}
         <div className="bg-[#0c4a6e] p-6 rounded-2xl shadow-lg border border-[#0c4a6e] card-hover relative overflow-hidden text-white">
           <div className="absolute -right-4 -top-4 text-white/10"><CalendarCheck className="w-32 h-32" /></div>
           <div className="relative z-10">
@@ -241,7 +287,6 @@ export default function AdminDashboard() {
           </div>
         </div>
         
-        {/* ── New Patients Card (WHITE/BLUE ACCENT) ── */}
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 card-hover relative overflow-hidden">
           <div className="absolute -right-4 -top-4 text-sky-50"><UserPlus className="w-32 h-32" /></div>
           <div className="relative z-10">
@@ -356,6 +401,37 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* ── COMPLIANCE CARD (RA 10173) ── */}
+          <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
+            <div className="flex items-center gap-3 mb-4 border-b border-gray-100 pb-2">
+              <ShieldCheck className="w-6 h-6 text-emerald-600" />
+              <h3 className="font-serif text-lg font-bold text-[#0c4a6e]">Data Privacy Act</h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              Under RA 10173, patient data must not be retained longer than necessary. 
+              Archive completed records older than 6 months to secure cold storage.
+            </p>
+            
+            <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
+              <span className="text-sm font-bold text-gray-700">Archivable Records</span>
+              <span className={`text-lg font-bold ${archivableCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {archivableCount}
+              </span>
+            </div>
+
+            <button 
+              onClick={handleArchiveData}
+              disabled={isArchiving || archivableCount === 0}
+              className={`w-full font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm text-sm
+                ${archivableCount > 0 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+            >
+              <Archive className="w-4 h-4" />
+              {isArchiving ? 'Archiving...' : 'Run Archive Sweep'}
+            </button>
+          </div>
+
           {/* ── LIVE Tasks ── */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
             <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
@@ -368,7 +444,6 @@ export default function AdminDashboard() {
               </button>
             </div>
             
-            {/* Add Task Input Form */}
             {isAddingTask && (
               <form onSubmit={handleAddTask} className="mb-4 flex gap-2 animate-fade-in-up">
                 <input 

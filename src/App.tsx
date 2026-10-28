@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { sendContactMessage } from './lib/api'
 import { supabase } from './lib/supabase' 
 import Login from './Login'
@@ -26,7 +26,7 @@ import {
   Smile, ChevronDown, ArrowRight, PlayCircle, Clock,
   ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   MapPin, Phone, Mail, CheckCircle2,
-  UserCircle2, Menu, X, LogOut, Bell
+  UserCircle2, Menu, X, LogOut, Bell, ShieldAlert
 } from 'lucide-react'
 
 const services = [
@@ -701,7 +701,72 @@ function LandingPage() {
   )
 }
 
-// ── 3. Router Setup ──
+// ── 3. SECURE ADMIN ROUTE GUARD ──
+function AdminRoute() {
+  const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const navigate = useNavigate();
+
+  // 👉 UPDATED TO YOUR OFFICIAL ADMIN EMAIL
+  const ADMIN_EMAIL = 'admin@samueladental.com'; 
+
+  useEffect(() => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email === ADMIN_EMAIL) {
+        setIsAdmin(true);
+      }
+      setLoading(false);
+    });
+
+    // Listen for changes (in case of a slow login redirect)
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.email === ADMIN_EMAIL) {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0c4a6e] mb-4"></div>
+        <p className="text-[#0c4a6e] font-semibold tracking-widest uppercase text-sm">Verifying Access...</p>
+      </div>
+    );
+  }
+
+  // If they are not the admin, immediately block them
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="font-serif text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+        <p className="text-gray-600 text-center max-w-md mb-6">
+          You do not have administrator privileges to view this page. If you are a patient, please return to the homepage to access your profile.
+        </p>
+        <button 
+          onClick={() => navigate('/')}
+          className="bg-[#0c4a6e] text-white px-6 py-3 rounded-full font-medium hover:bg-[#075985] transition shadow-md"
+        >
+          Return to Homepage
+        </button>
+      </div>
+    );
+  }
+
+  // If they are the admin, render the AdminLayout
+  return <Outlet />;
+}
+
+// ── 4. Router Setup ──
 export default function App() {
   return (
     <BrowserRouter>
@@ -719,13 +784,16 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/appointment" element={<Appointment />} />
         
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="appointments" element={<AdminAppointments />} />
-          <Route path="queue" element={<AdminQueue />} /> 
-          <Route path="patients" element={<AdminPatients />} />
-          <Route path="treatment" element={<AdminTreatment />} />
-          <Route path="tracking" element={<AdminTracking />} />
+        {/* WE HAVE WRAPPED THE ADMIN LAYOUT IN THE SECURE ROUTE GUARD HERE */}
+        <Route element={<AdminRoute />}>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="appointments" element={<AdminAppointments />} />
+            <Route path="queue" element={<AdminQueue />} /> 
+            <Route path="patients" element={<AdminPatients />} />
+            <Route path="treatment" element={<AdminTreatment />} />
+            <Route path="tracking" element={<AdminTracking />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

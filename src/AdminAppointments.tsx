@@ -39,6 +39,7 @@ export default function AdminAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin'); // ── AUDIT STATE ──
 
   // ─── MODAL STATE ───
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<Appointment[]>([]);
@@ -47,7 +48,26 @@ export default function AdminAppointments() {
 
   useEffect(() => {
     fetchAppointments();
+    fetchAdminSession();
   }, []);
+
+  // ── NEW: Fetch Admin Email for Audit Log ──
+  const fetchAdminSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.email) {
+      setAdminEmail(session.user.email);
+    }
+  };
+
+  // ── NEW: Reusable Audit Log Helper ──
+  const logAuditAction = async (action: string, patientName: string, details: string) => {
+    await supabase.from('audit_logs').insert([{
+      admin_email: adminEmail,
+      action: action,
+      patient_name: patientName,
+      details: details
+    }]);
+  };
 
   const fetchAppointments = async () => {
     const { data, error } = await supabase.from('appointments').select('*');
@@ -132,13 +152,15 @@ export default function AdminAppointments() {
 
   // ─── ADMIN ACTIONS (Confirm / Decline) ───
   const handleConfirm = async (req: Request) => {
-    // 1. Update Database
     const { error } = await supabase
       .from('appointments')
       .update({ status: 'confirmed' })
       .eq('id', req.id);
 
     if (!error) {
+      // 👉 AUDIT LOG
+      await logAuditAction('Approve Appointment', req.name, `Approved requested appointment for ${req.service} on ${req.dateStr} at ${req.time}`);
+
       setAppointments([...appointments, {
         id: req.id,
         user_id: req.user_id,
@@ -154,7 +176,6 @@ export default function AdminAppointments() {
 
       const formattedDate = req.targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-      // 2. Send Notification to User's Bell
       if (req.user_id) {
         await supabase.from('notifications').insert([{
           user_id: req.user_id,
@@ -163,7 +184,6 @@ export default function AdminAppointments() {
         }]);
       }
 
-      // 3. Send Email Confirmation via EmailJS
       if (req.email) {
         try {
           await emailjs.send(
@@ -196,11 +216,13 @@ export default function AdminAppointments() {
       .eq('id', req.id);
 
     if (!error) {
+      // 👉 AUDIT LOG
+      await logAuditAction('Decline Appointment', req.name, `Declined requested appointment for ${req.service} on ${req.dateStr} at ${req.time}`);
+
       setRequests(prev => prev.filter(r => r.id !== req.id));
       
       const formattedDate = req.targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-      // Send Denial Notification to User's Bell
       if (req.user_id) {
         await supabase.from('notifications').insert([{
           user_id: req.user_id,
@@ -230,6 +252,9 @@ export default function AdminAppointments() {
       .single();
 
     if (!error && data) {
+      // 👉 AUDIT LOG
+      await logAuditAction('Manual Appointment', newEntryForm.name, `Manually encoded appointment for ${newEntryForm.service} on ${newEntryForm.date}`);
+
       const [y, m, d] = newEntryForm.date.split('-');
       
       setAppointments([...appointments, {

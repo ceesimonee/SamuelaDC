@@ -3,8 +3,23 @@ import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient'; 
 import {
   Smile, ArrowLeft, MapPin, Phone, Clock,
-  AlertCircle, ChevronDown, CheckCircle2, Lock, LogIn, UserCheck
+  AlertCircle, ChevronDown, CheckCircle2, Lock, LogIn, UserCheck, CalendarX2
 } from 'lucide-react';
+
+// ── NEW: Bulletproof time parser for PostgreSQL 'time' type ──
+const normalizeTime = (timeStr: string) => {
+  if (!timeStr) return '';
+  return timeStr.substring(0, 5); // Forces "15:00:00" or "15:00:00+00" to exactly "15:00"
+};
+
+const format12Hour = (time24: string) => {
+  if (!time24) return '';
+  const [hourStr, minStr] = time24.split(':');
+  let hour = parseInt(hourStr, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  hour = hour % 12 || 12;
+  return `${hour}:${minStr} ${ampm}`;
+};
 
 export default function Appointment() {
   const navigate = useNavigate();
@@ -14,6 +29,10 @@ export default function Appointment() {
   // Auth Check State
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authenticatedUser, setAuthenticatedUser] = useState<any>(null);
+
+  // Concurrency / Double-Booking State
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -36,7 +55,6 @@ export default function Appointment() {
       if (session?.user) {
         setAuthenticatedUser(session.user);
 
-        // Auto-fill registered email & name
         const userEmail = session.user.email || '';
         const fullMetaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
         const nameParts = fullMetaName.trim().split(' ');
@@ -66,29 +84,118 @@ export default function Appointment() {
     };
   }, []);
 
-  // ─── 2. HANDLE APPOINTMENT SUBMISSION & BELL NOTIFICATION ───
+  // ─── 2. FETCH BOOKED & PENDING SLOTS WHEN DATE CHANGES ───
+  useEffect(() => {
+    const fetchBookingsForDate = async () => {
+      if (!formData.date) {
+        setBookedSlots([]);
+        setAvailableSlots([]);
+        return;
+      }
+
+      const [year, month, day] = formData.date.split('-');
+      const dateObj = new Date(Number(year), Number(month) - 1, Number(day));
+      const dayOfWeek = dateObj.getDay(); 
+
+      if (dayOfWeek === 0) {
+        setAvailableSlots([]);
+        setBookedSlots([]);
+        return;
+      }
+
+      const startHour = 9; 
+      const endHour = dayOfWeek === 6 ? 13 : 18; 
+      
+      const generatedSlots = [];
+      for (let i = startHour; i < endHour; i++) {
+        generatedSlots.push(`${i.toString().padStart(2, '0')}:00`); 
+      }
+      setAvailableSlots(generatedSlots);
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('appointment_time, status')
+        .eq('appointment_date', formData.date);
+
+      if (data && !error) {
+        const taken = data
+          .filter(app => {
+            const stat = (app.status || '').toLowerCase();
+            // Completely block ANY slot that is not explicitly cancelled, declined, or rejected
+            return !['cancelled', 'declined', 'rejected', 'completed'].includes(stat);
+          })
+          .map(app => normalizeTime(app.appointment_time));
+          
+        setBookedSlots(taken);
+      }
+    };
+
+    fetchBookingsForDate();
+  }, [formData.date]);
+
+  const handleDateSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedDate = e.target.value;
+    const [year, month, day] = selectedDate.split('-');
+    const dateObj = new Date(Number(year), Number(month) - 1, Number(day));
+    
+    if (dateObj.getDay() === 0) {
+      alert("Samuela Dental Clinic is closed on Sundays. Please select a different day.");
+      setFormData({ ...formData, date: '', time: '' });
+      return;
+    }
+
+    setFormData({ ...formData, date: selectedDate, time: '' }); 
+  };
+
+  // ─── 3. HANDLE APPOINTMENT SUBMISSION (STRICT LOCK) ───
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!authenticatedUser) {
-      alert('You must be signed in with a registered account to book an appointment.');
+      alert('You must be signed in to book an appointment.');
       navigate('/login');
+      return;
+    }
+    
+    if (!formData.time) {
+      alert('Please select an available time slot.');
       return;
     }
 
     setIsSubmitting(true);
+
+    // 🔴 FINAL CONCURRENCY CHECK
+    const { data: conflictCheck, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('appointment_time, status')
+      .eq('appointment_date', formData.date);
+
+    if (fetchErr) {
+      alert("Could not verify slot availability. Please try again.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const hasConflict = conflictCheck?.some(app => {
+      const stat = (app.status || '').toLowerCase();
+      const isActive = !['cancelled', 'declined', 'rejected', 'completed'].includes(stat);
+      const isSameTime = normalizeTime(app.appointment_time) === formData.time;
+      return isActive && isSameTime;
+    });
+
+    if (hasConflict) {
+      alert("Race condition prevented! Another patient just booked this exact time slot. Please choose another time.");
+      setIsSubmitting(false);
+      setFormData({ ...formData, time: '' }); 
+      setBookedSlots(prev => [...prev, formData.time]); 
+      return;
+    }
     
     const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-    
-    const formattedDate = formData.date
-      ? new Date(formData.date + 'T00:00:00').toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric'
-        })
-      : formData.date;
+    const formattedDate = new Date(formData.date + 'T00:00:00').toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric'
+    });
 
-    // 1. Insert into Supabase `appointments` table (with user_id)
     const { error } = await supabase
       .from('appointments')
       .insert([{
@@ -109,10 +216,9 @@ export default function Appointment() {
       return;
     }
 
-    // 2. Send "Pending" Notification to User's Bell
     await supabase.from('notifications').insert([{
       user_id: authenticatedUser.id,
-      message: `Your appointment request for ${formData.service} on ${formattedDate} at ${formData.time} is pending admin approval.`,
+      message: `Your appointment request for ${formData.service} on ${formattedDate} at ${format12Hour(formData.time)} is pending admin approval.`,
       type: 'info'
     }]);
 
@@ -302,25 +408,54 @@ export default function Appointment() {
                       </div>
                     </div>
                     
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Date</label>
                       <input
                         type="date" required
                         disabled={!authenticatedUser}
-                        min={new Date().toISOString().split('T')[0]}
-                        value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})}
+                        min={new Date().toISOString().split('T')[0]} 
+                        value={formData.date} 
+                        onChange={handleDateSelection}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-gray-50 focus:bg-white text-gray-700 disabled:opacity-60"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Target Time</label>
-                      <input
-                        type="time" required
-                        disabled={!authenticatedUser}
-                        value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-gray-50 focus:bg-white text-gray-700 disabled:opacity-60"
-                      />
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Available Time Slots</label>
+                      
+                      {!formData.date ? (
+                        <div className="flex flex-col items-center justify-center p-6 bg-gray-50 border border-gray-200 border-dashed rounded-xl text-gray-400">
+                          <CalendarX2 className="w-8 h-8 mb-2 opacity-50" />
+                          <span className="text-sm">Please select a date first</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                          {availableSlots.map(slot => {
+                            const isBooked = bookedSlots.includes(slot);
+                            const isSelected = formData.time === slot;
+                            
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                disabled={isBooked || !authenticatedUser}
+                                onClick={() => setFormData({ ...formData, time: slot })}
+                                className={`py-3 px-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                                  isBooked 
+                                    ? 'bg-gray-100 text-gray-400 line-through cursor-not-allowed border border-transparent' 
+                                    : isSelected 
+                                      ? 'bg-dental-600 text-white shadow-md shadow-dental-600/30 border border-dental-600 scale-105' 
+                                      : 'bg-white border border-gray-200 text-gray-700 hover:border-dental-500 hover:text-dental-600 hover:shadow-sm'
+                                }`}
+                              >
+                                {format12Hour(slot)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      <input type="hidden" required value={formData.time} />
                     </div>
                   </div>
 
