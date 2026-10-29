@@ -5,7 +5,7 @@ import { supabase } from './lib/supabase';
 import { 
   Clock, CalendarCheck, UserPlus, 
   ArrowRight, CalendarPlus, MonitorPlay, PlusCircle, Check,
-  ShieldCheck, Archive, Mail, Trash2
+  Archive, Mail, Trash2
 } from 'lucide-react';
 
 Chart.register(...registerables);
@@ -28,9 +28,18 @@ type ContactMessage = {
   id: number;
   name: string;
   email: string;
-  phone: string; // 👉 UPDATED to match phone field
+  phone: string; 
   message: string;
   created_at: string;
+};
+
+// 👉 NEW: Type for Live Queue Items
+type QueueItem = {
+  id: number;
+  ticket: string;
+  name: string;
+  service: string;
+  status: string;
 };
 
 export default function AdminDashboard() {
@@ -46,6 +55,7 @@ export default function AdminDashboard() {
 
   // Analytics State
   const [timeRange, setTimeRange] = useState('This Week');
+  const [chartLabels, setChartLabels] = useState<string[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
   const [weeklyVisits, setWeeklyVisits] = useState<number[]>([0, 0, 0, 0, 0, 0]);
   const [servicesData, setServicesData] = useState<{ labels: string[]; counts: number[] }>({ labels: [], counts: [] });
 
@@ -60,6 +70,9 @@ export default function AdminDashboard() {
 
   // Contact Messages State
   const [messages, setMessages] = useState<ContactMessage[]>([]);
+
+  // 👉 NEW: Live Queue State
+  const [liveQueue, setLiveQueue] = useState<QueueItem[]>([]);
 
   // Chart Refs
   const lineChartRef = useRef<HTMLCanvasElement>(null);
@@ -78,6 +91,7 @@ export default function AdminDashboard() {
     fetchNewPatients();
     fetchArchivableCount();
     fetchContactMessages();
+    fetchLiveQueue(); // 👉 Fetch queue data
     fetchAnalyticsData(timeRange);
   }, [timeRange]);
 
@@ -114,6 +128,20 @@ export default function AdminDashboard() {
     }
   };
 
+  // 👉 NEW: Fetch Live Queue Status
+  const fetchLiveQueue = async () => {
+    const { data, error } = await supabase
+      .from('queue')
+      .select('*')
+      .in('status', ['waiting', 'serving'])
+      .order('created_at', { ascending: true });
+
+    if (data && !error) {
+      setLiveQueue(data);
+    }
+  };
+
+  // 👉 UPDATED: Handles 'This Year' monthly breakdown
   const fetchAnalyticsData = async (range: string) => {
     const now = new Date();
     let startDate = new Date();
@@ -129,6 +157,8 @@ export default function AdminDashboard() {
       now.setDate(now.getDate() + 7);
     } else if (range === 'This Month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (range === 'This Year') {
+      startDate = new Date(now.getFullYear(), 0, 1);
     }
 
     const startDateStr = startDate.toISOString().split('T')[0];
@@ -140,24 +170,40 @@ export default function AdminDashboard() {
 
     if (error || !data) return;
 
-    const daysCount = [0, 0, 0, 0, 0, 0];
+    let labels: string[] = [];
+    let dataPoints: number[] = [];
     const serviceCounts: { [key: string]: number } = {};
 
-    data.forEach(app => {
-      if (app.appointment_date) {
-        const appDate = new Date(app.appointment_date);
-        const dayOfWeek = appDate.getDay();
-        if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-          daysCount[dayOfWeek - 1] += 1;
+    if (range === 'This Year') {
+      labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      dataPoints = new Array(12).fill(0);
+      data.forEach(app => {
+        if (app.appointment_date) {
+          const m = new Date(app.appointment_date).getMonth();
+          dataPoints[m] += 1;
         }
-      }
+        if (app.service) {
+          serviceCounts[app.service] = (serviceCounts[app.service] || 0) + 1;
+        }
+      });
+    } else {
+      labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      dataPoints = [0, 0, 0, 0, 0, 0];
+      data.forEach(app => {
+        if (app.appointment_date) {
+          const dayOfWeek = new Date(app.appointment_date).getDay();
+          if (dayOfWeek >= 1 && dayOfWeek <= 6) {
+            dataPoints[dayOfWeek - 1] += 1;
+          }
+        }
+        if (app.service) {
+          serviceCounts[app.service] = (serviceCounts[app.service] || 0) + 1;
+        }
+      });
+    }
 
-      if (app.service) {
-        serviceCounts[app.service] = (serviceCounts[app.service] || 0) + 1;
-      }
-    });
-
-    setWeeklyVisits(daysCount);
+    setChartLabels(labels);
+    setWeeklyVisits(dataPoints);
 
     const sLabels = Object.keys(serviceCounts);
     const sCounts = Object.values(serviceCounts);
@@ -168,6 +214,7 @@ export default function AdminDashboard() {
     Chart.defaults.font.family = "'Inter', sans-serif";
     Chart.defaults.color = '#64748b';
 
+    // 1. Line Chart
     if (lineChartRef.current) {
       const ctxLine = lineChartRef.current.getContext('2d');
       if (ctxLine) {
@@ -180,7 +227,7 @@ export default function AdminDashboard() {
         lineChartInstance.current = new Chart(ctxLine, {
           type: 'line',
           data: {
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            labels: chartLabels,
             datasets: [{
               label: 'Patient Visits',
               data: weeklyVisits,
@@ -202,6 +249,7 @@ export default function AdminDashboard() {
       }
     }
 
+    // 2. Doughnut Chart (Legend Optimized)
     if (doughnutChartRef.current) {
       if (doughnutChartInstance.current) doughnutChartInstance.current.destroy();
       
@@ -213,16 +261,20 @@ export default function AdminDashboard() {
           labels: servicesData.labels,
           datasets: [{
             data: servicesData.counts,
-            backgroundColor: hasRealData ? ['#0284c7', '#0369a1', '#075985', '#38bdf8', '#7dd3fc', '#bae6fd'] : ['#f1f5f9'], 
+            backgroundColor: hasRealData ? ['#0284c7', '#0369a1', '#075985', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe'] : ['#f1f5f9'], 
             borderWidth: 0,
             hoverOffset: 4
           }]
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          cutout: '75%',
+          cutout: '70%',
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } },
+            // 👉 FIXED: Legend positioned to the right to prevent messy wrapping
+            legend: { 
+              position: 'right', 
+              labels: { boxWidth: 10, padding: 12, font: { size: 11 } } 
+            },
             tooltip: { enabled: hasRealData } 
           }
         }
@@ -233,7 +285,7 @@ export default function AdminDashboard() {
       if (lineChartInstance.current) lineChartInstance.current.destroy();
       if (doughnutChartInstance.current) doughnutChartInstance.current.destroy();
     };
-  }, [weeklyVisits, servicesData]);
+  }, [weeklyVisits, servicesData, chartLabels]);
 
   const fetchContactMessages = async () => {
     const { data, error } = await supabase
@@ -340,23 +392,40 @@ export default function AdminDashboard() {
           <p className="text-gray-500 mt-1">Here is your clinic's command center overview.</p>
         </div>
         
-        <div className="bg-white border border-gray-200 px-5 py-3 rounded-xl shadow-sm flex items-center gap-4">
-          <div className="bg-sky-50 p-2 rounded-lg">
-            <Clock className="w-6 h-6 text-[#0c4a6e]" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">
-              {time.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-            </p>
-            <p className="text-xl font-bold text-[#0c4a6e] font-sans leading-none tracking-tight">
-              {time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </p>
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          
+          {/* 👉 NEW: Compact Data Privacy Archive Button in Header */}
+          <button 
+            onClick={handleArchiveData}
+            disabled={isArchiving || archivableCount === 0}
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-bold transition shadow-sm ${
+              archivableCount > 0 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 cursor-pointer' 
+                : 'bg-white text-gray-400 border-gray-200 cursor-not-allowed'
+            }`}
+            title="Data Privacy Act (Archive Old Records)"
+          >
+            <Archive className="w-5 h-5" />
+            {isArchiving ? 'Archiving...' : `Archive Data (${archivableCount})`}
+          </button>
+
+          <div className="bg-white border border-gray-200 px-5 py-3 rounded-xl shadow-sm flex items-center gap-4">
+            <div className="bg-sky-50 p-2 rounded-lg">
+              <Clock className="w-6 h-6 text-[#0c4a6e]" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">
+                {time.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+              </p>
+              <p className="text-xl font-bold text-[#0c4a6e] font-sans leading-none tracking-tight">
+                {time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
-        
         <div className="bg-[#0c4a6e] p-6 rounded-2xl shadow-lg border border-[#0c4a6e] card-hover relative overflow-hidden text-white">
           <div className="absolute -right-4 -top-4 text-white/10"><CalendarCheck className="w-32 h-32" /></div>
           <div className="relative z-10">
@@ -383,7 +452,6 @@ export default function AdminDashboard() {
             <p className="text-sm text-gray-500 mt-1 font-medium">New Patients This Week</p>
           </div>
         </div>
-
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
@@ -400,6 +468,8 @@ export default function AdminDashboard() {
                 <option value="This Week">This Week</option>
                 <option value="Last Week">Last Week</option>
                 <option value="This Month">This Month</option>
+                {/* 👉 NEW: 'This Year' option added */}
+                <option value="This Year">This Year</option>
               </select>
             </div>
             
@@ -462,7 +532,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Patient Inquiries */}
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden">
             <div className="p-6 border-b border-sky-900 flex items-center justify-between bg-sky-900 text-white">
               <div className="flex items-center gap-2">
@@ -526,51 +595,54 @@ export default function AdminDashboard() {
 
         <div className="lg:col-span-4 space-y-8">
           
+          {/* 👉 UPDATED: 2-Column Quick Actions */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
             <h3 className="font-serif text-lg font-bold text-[#0c4a6e] mb-4 border-b border-gray-100 pb-2">Quick Actions</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button onClick={() => navigate('/admin/patients')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
                 <UserPlus className="w-6 h-6 mb-2 transition-colors" />
                 <span className="text-[10px] sm:text-xs font-bold text-center">New Patient</span>
               </button>
               <button onClick={() => navigate('/admin/appointments')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
                 <CalendarPlus className="w-6 h-6 mb-2 transition-colors" />
-                <span className="text-[10px] sm:text-xs font-bold text-center">Book Appt</span>
-              </button>
-              <button onClick={() => navigate('/admin/queue')} className="flex flex-col items-center justify-center p-3 bg-sky-50 hover:bg-[#0c4a6e] hover:text-white rounded-xl border border-sky-100 transition group text-[#0c4a6e]">
-                <MonitorPlay className="w-6 h-6 mb-2 transition-colors" />
-                <span className="text-[10px] sm:text-xs font-bold text-center">Live Queue</span>
+                <span className="text-[10px] sm:text-xs font-bold text-center">Book Appointment</span>
               </button>
             </div>
           </div>
 
+          {/* 👉 NEW: Dedicated Live Queue Tracker Card */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
-            <div className="flex items-center gap-3 mb-4 border-b border-gray-100 pb-2">
-              <ShieldCheck className="w-6 h-6 text-emerald-600" />
-              <h3 className="font-serif text-lg font-bold text-[#0c4a6e]">Data Privacy Act</h3>
-            </div>
-            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-              Under RA 10173, patient data must not be retained longer than necessary. 
-              Archive completed records older than 6 months to secure cold storage.
-            </p>
-            
-            <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
-              <span className="text-sm font-bold text-gray-700">Archivable Records</span>
-              <span className={`text-lg font-bold ${archivableCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                {archivableCount}
+            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+              <h3 className="font-serif text-lg font-bold text-[#0c4a6e] flex items-center gap-2">
+                <MonitorPlay className="w-5 h-5 text-dental-500" /> Live Queue
+              </h3>
+              <span className="bg-dental-50 text-dental-700 text-xs font-bold px-2.5 py-0.5 rounded-full border border-dental-100">
+                {liveQueue.length} Waiting
               </span>
             </div>
-
-            <button 
-              onClick={handleArchiveData}
-              disabled={isArchiving || archivableCount === 0}
-              className={`w-full font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm text-sm
-                ${archivableCount > 0 
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
-            >
-              <Archive className="w-4 h-4" />
-              {isArchiving ? 'Archiving...' : 'Run Archive Sweep'}
+            
+            <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+              {liveQueue.length === 0 ? (
+                <p className="text-sm text-gray-400 italic text-center py-4">No patients currently in queue.</p>
+              ) : (
+                liveQueue.map(q => (
+                  <div key={q.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${q.status === 'serving' ? 'bg-accent-600 text-white animate-pulse shadow-sm' : 'bg-gray-200 text-gray-600'}`}>
+                        {q.ticket.replace('#', '')}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-900 leading-tight">{q.name}</p>
+                        <p className="text-[10px] text-gray-500">{q.service}</p>
+                      </div>
+                    </div>
+                    {q.status === 'serving' && <span className="text-[10px] font-bold text-accent-600 uppercase tracking-wider">Serving</span>}
+                  </div>
+                ))
+              )}
+            </div>
+            <button onClick={() => navigate('/admin/queue')} className="w-full mt-4 bg-sky-50 hover:bg-sky-100 text-dental-700 font-bold py-2.5 rounded-xl text-sm transition">
+              Manage Queue Dashboard
             </button>
           </div>
 
