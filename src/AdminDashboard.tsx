@@ -33,7 +33,6 @@ type ContactMessage = {
   created_at: string;
 };
 
-// 👉 NEW: Type for Live Queue Items
 type QueueItem = {
   id: number;
   ticket: string;
@@ -45,36 +44,27 @@ type QueueItem = {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   
-  // Clock State
   const [time, setTime] = useState(new Date());
   
-  // Live Database State
   const [todayAppointments, setTodayAppointments] = useState<TodayAppointment[]>([]);
   const [todayCount, setTodayCount] = useState(0);
   const [newPatientsCount, setNewPatientsCount] = useState(0); 
 
-  // Analytics State
   const [timeRange, setTimeRange] = useState('This Week');
   const [chartLabels, setChartLabels] = useState<string[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
   const [weeklyVisits, setWeeklyVisits] = useState<number[]>([0, 0, 0, 0, 0, 0]);
   const [servicesData, setServicesData] = useState<{ labels: string[]; counts: number[] }>({ labels: [], counts: [] });
 
-  // Tasks State
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  // Compliance State
   const [archivableCount, setArchivableCount] = useState(0);
   const [isArchiving, setIsArchiving] = useState(false);
 
-  // Contact Messages State
   const [messages, setMessages] = useState<ContactMessage[]>([]);
-
-  // 👉 NEW: Live Queue State
   const [liveQueue, setLiveQueue] = useState<QueueItem[]>([]);
 
-  // Chart Refs
   const lineChartRef = useRef<HTMLCanvasElement>(null);
   const doughnutChartRef = useRef<HTMLCanvasElement>(null);
   const lineChartInstance = useRef<Chart | null>(null);
@@ -91,7 +81,7 @@ export default function AdminDashboard() {
     fetchNewPatients();
     fetchArchivableCount();
     fetchContactMessages();
-    fetchLiveQueue(); // 👉 Fetch queue data
+    fetchLiveQueue(); 
     fetchAnalyticsData(timeRange);
   }, [timeRange]);
 
@@ -128,7 +118,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 👉 NEW: Fetch Live Queue Status
   const fetchLiveQueue = async () => {
     const { data, error } = await supabase
       .from('queue')
@@ -141,7 +130,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 👉 UPDATED: Handles 'This Year' monthly breakdown
   const fetchAnalyticsData = async (range: string) => {
     const now = new Date();
     let startDate = new Date();
@@ -214,7 +202,6 @@ export default function AdminDashboard() {
     Chart.defaults.font.family = "'Inter', sans-serif";
     Chart.defaults.color = '#64748b';
 
-    // 1. Line Chart
     if (lineChartRef.current) {
       const ctxLine = lineChartRef.current.getContext('2d');
       if (ctxLine) {
@@ -249,7 +236,6 @@ export default function AdminDashboard() {
       }
     }
 
-    // 2. Doughnut Chart (Legend Optimized)
     if (doughnutChartRef.current) {
       if (doughnutChartInstance.current) doughnutChartInstance.current.destroy();
       
@@ -270,7 +256,6 @@ export default function AdminDashboard() {
           responsive: true, maintainAspectRatio: false,
           cutout: '70%',
           plugins: {
-            // 👉 FIXED: Legend positioned to the right to prevent messy wrapping
             legend: { 
               position: 'right', 
               labels: { boxWidth: 10, padding: 12, font: { size: 11 } } 
@@ -393,8 +378,6 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-4">
-          
-          {/* 👉 NEW: Compact Data Privacy Archive Button in Header */}
           <button 
             onClick={handleArchiveData}
             disabled={isArchiving || archivableCount === 0}
@@ -468,7 +451,6 @@ export default function AdminDashboard() {
                 <option value="This Week">This Week</option>
                 <option value="Last Week">Last Week</option>
                 <option value="This Month">This Month</option>
-                {/* 👉 NEW: 'This Year' option added */}
                 <option value="This Year">This Year</option>
               </select>
             </div>
@@ -538,9 +520,11 @@ export default function AdminDashboard() {
                 <Mail className="w-5 h-5 text-sky-300" />
                 <h3 className="font-serif text-xl font-bold">Patient Contact Inquiries</h3>
               </div>
-              <span className="bg-sky-800 text-sky-200 text-xs px-3 py-1 rounded-full font-bold">
-                {messages.length} Messages
-              </span>
+              <div className="flex items-center gap-4">
+                <span className="bg-sky-800 text-sky-200 text-xs px-3 py-1 rounded-full font-bold">
+                  {messages.length} Messages
+                </span>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -595,7 +579,6 @@ export default function AdminDashboard() {
 
         <div className="lg:col-span-4 space-y-8">
           
-          {/* 👉 UPDATED: 2-Column Quick Actions */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
             <h3 className="font-serif text-lg font-bold text-[#0c4a6e] mb-4 border-b border-gray-100 pb-2">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -610,7 +593,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* 👉 NEW: Dedicated Live Queue Tracker Card */}
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
             <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
               <h3 className="font-serif text-lg font-bold text-[#0c4a6e] flex items-center gap-2">
@@ -700,6 +682,7 @@ export default function AdminDashboard() {
 
         </div>
       </div>
+      
     </div>
   );
 }

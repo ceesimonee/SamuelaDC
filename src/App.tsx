@@ -16,6 +16,9 @@ import AdminQueue from './AdminQueue'
 import AdminPatients from './AdminPatients'
 import AdminTreatment from './AdminTreatment'
 import AdminTracking from './AdminTracking'
+// 👉 IMPORTING NEW COMPONENTS
+import PatientChat from './PatientChat';
+import AdminMessages from './AdminMessages';
 
 // ── VERCEL DEPLOYMENT IMAGE IMPORTS ──
 import heroImg from './imports/SDC1.jfif';
@@ -195,6 +198,7 @@ function PublicLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
 
+            {/* Logo */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavClick('home')}>
               <div className="bg-[#0c4a6e] p-2 rounded-full">
                 <Smile className="w-8 h-8 text-white" />
@@ -205,6 +209,7 @@ function PublicLayout() {
               </div>
             </div>
 
+            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
               <button onClick={() => handleNavClick('home')} className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">Home</button>
 
@@ -230,6 +235,8 @@ function PublicLayout() {
               <Link to="/about" className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">About</Link>
 
               <div className="flex items-center gap-4 pl-4 border-l border-gray-200">
+                
+                {/* PROFILE BUTTON */}
                 {user ? (
                   <div className="relative" ref={profileRef}>
                     <button 
@@ -269,6 +276,7 @@ function PublicLayout() {
                   Book Appointment
                 </Link>
 
+                {/* NOTIFICATION BELL */}
                 <div className="relative" ref={bellRef}>
                   <button 
                     onClick={handleBellClick}
@@ -282,6 +290,7 @@ function PublicLayout() {
                     )}
                   </button>
 
+                  {/* Notification Dropdown */}
                   {bellOpen && (
                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up">
                       <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
@@ -325,6 +334,7 @@ function PublicLayout() {
               </div>
             </div>
 
+            {/* Mobile Hamburger & Bell */}
             <div className="md:hidden flex items-center gap-3">
               <button onClick={handleBellClick} className="relative p-2">
                 <Bell className="w-6 h-6 text-[#0c4a6e]" />
@@ -342,6 +352,7 @@ function PublicLayout() {
           </div>
         </div>
 
+        {/* Mobile Notification Dropdown */}
         {bellOpen && (
           <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg max-h-80 overflow-y-auto z-50">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900">
@@ -379,6 +390,7 @@ function PublicLayout() {
           </div>
         )}
 
+        {/* Mobile Menu */}
         {mobileOpen && !bellOpen && (
           <div className="md:hidden bg-white border-t z-40 relative">
             <div className="px-4 pt-2 pb-6 space-y-2">
@@ -421,6 +433,8 @@ function PublicLayout() {
           </div>
         )}
       </nav>
+
+      <PatientChat user={user} />
 
       <main className="flex-grow">
         <Outlet />
@@ -472,7 +486,6 @@ function PublicLayout() {
 function LandingPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // 👉 REPLACED SERVICE WITH PHONE
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -490,7 +503,7 @@ function LandingPage() {
         {
           name: form.name,
           email: form.email,
-          phone: form.phone, // 👉 Insert phone number instead of service
+          phone: form.phone,
           message: form.message
         }
       ]);
@@ -662,7 +675,6 @@ function LandingPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
-                  {/* 👉 REPLACED DROPDOWN WITH PHONE FIELD */}
                   <input
                     type="tel" required placeholder="+63 9xx xxx xxxx"
                     value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
@@ -784,6 +796,8 @@ export default function App() {
             <Route path="patients" element={<AdminPatients />} />
             <Route path="treatment" element={<AdminTreatment />} />
             <Route path="tracking" element={<AdminTracking />} />
+            {/* 👉 INJECT ADMIN MESSAGES ROUTE HERE */}
+            <Route path="messages" element={<AdminMessages />} />
           </Route>
         </Route>
       </Routes>
