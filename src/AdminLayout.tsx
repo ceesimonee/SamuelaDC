@@ -38,7 +38,6 @@ export default function AdminLayout() {
     fetchPendingCount();
     fetchUnreadChats();
 
-    // 👉 FIXED: Added Date.now() to channel names to prevent StrictMode caching crashes
     const apptChannel = supabase
       .channel(`public:appointments_layout_${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
@@ -115,6 +114,9 @@ export default function AdminLayout() {
               </Link>
               <Link to="/admin/patients" className={`nav-link hover:text-dental-600 font-medium transition ${isActive('/admin/patients')}`}>Records</Link>
               
+              {/* 👉 NEW SERVICES TAB ADDED HERE */}
+              <Link to="/admin/services" className={`nav-link hover:text-dental-600 font-medium transition ${isActive('/admin/services')}`}>Services</Link>
+
               <div className="w-px h-6 bg-gray-200 mx-2"></div>
 
               <Link to="/admin/messages" className="mr-2 group">
@@ -179,6 +181,10 @@ export default function AdminLayout() {
                 Queue <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">LIVE</span>
               </Link>
               <Link to="/admin/patients" onClick={() => setMobileMenuOpen(false)} className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/patients') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>Records</Link>
+              
+              {/* 👉 NEW SERVICES TAB FOR MOBILE */}
+              <Link to="/admin/services" onClick={() => setMobileMenuOpen(false)} className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/services') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>Services</Link>
+
               <Link to="/admin/messages" onClick={() => setMobileMenuOpen(false)} className={`flex items-center justify-between w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/messages') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>
                 <span>Patient Inbox</span>
                 {unreadChatCount > 0 && (

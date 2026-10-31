@@ -4,11 +4,17 @@ import { supabase } from './lib/supabase'
 import Login from './Login'
 import Appointment from './Appointment'
 import About from './About' 
+
+// You can safely delete these 5 files later if you want, as the new dynamic system replaces them!
 import ToothFilling from './services/ToothFilling'
 import Cleaning from './services/Cleaning';
 import Extraction from './services/Extraction';
 import Sealants from './services/Sealants';
 import Fluoride from './services/Fluoride';
+
+// 👉 IMPORTING NEW DYNAMIC SERVICE PAGE
+import ServiceDetail from './ServiceDetail';
+
 import AdminLayout from './AdminLayout'
 import AdminDashboard from './AdminDashboard'
 import AdminAppointments from './AdminAppointments'
@@ -16,11 +22,10 @@ import AdminQueue from './AdminQueue'
 import AdminPatients from './AdminPatients'
 import AdminTreatment from './AdminTreatment'
 import AdminTracking from './AdminTracking'
-// 👉 IMPORTING NEW COMPONENTS
 import PatientChat from './PatientChat';
 import AdminMessages from './AdminMessages';
+import AdminServices from './AdminServices';
 
-// ── VERCEL DEPLOYMENT IMAGE IMPORTS ──
 import heroImg from './imports/SDC1.jfif';
 import aboutImg from './imports/SDC2.jfif';
 
@@ -28,58 +33,38 @@ import {
   Smile, ChevronDown, ArrowRight, PlayCircle, Clock,
   ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   MapPin, Phone, Mail, CheckCircle2,
-  UserCircle2, Menu, X, LogOut, Bell, ShieldAlert
+  UserCircle2, Menu, X, LogOut, Bell, ShieldAlert,
+  Heart, Star, Shield, PlusCircle
 } from 'lucide-react'
 
-const services = [
-  {
-    icon: ShieldPlus, label: 'Tooth Filling Restoration',
-    desc: 'Restore the strength and natural appearance of your teeth with our durable, tooth-colored composite fillings.',
-    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
-    path: '/services/tooth-filling'
-  },
-  {
-    icon: Sparkles, label: 'Cleaning & Prophylaxis',
-    desc: 'Maintain a bright, healthy smile and prevent gum disease with our thorough, professional dental cleaning services.',
-    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
-    path: '/services/cleaning'
-  },
-  {
-    icon: MinusCircle, label: 'Tooth Extraction',
-    desc: 'Comfortable, stress-free tooth removal for severely decayed, damaged, or problematic wisdom teeth.',
-    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
-    path: '/services/extraction'
-  },
-  {
-    icon: ShieldCheck, label: 'Pit & Fissure Sealants',
-    desc: 'Protect your teeth from decay by blocking out cavity-causing bacteria in the deep grooves of your molars.',
-    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
-    path: '/services/sealants'
-  },
-  {
-    icon: Activity, label: 'Fluoride Application',
-    desc: 'Strengthen your teeth and protect them against decay. Rebuild weakened enamel and reverse early signs of tooth decay.',
-    bg: 'bg-sky-50', color: 'text-[#0c4a6e]', linkColor: 'text-[#0c4a6e]',
-    path: '/services/fluoride'
-  },
-]
+// 👉 DYNAMIC ICON MAPPER FOR DATABASE SERVICES
+const ICON_MAP: Record<string, any> = {
+  ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
+  Heart, Star, Shield, PlusCircle
+};
 
-// ── 1. The New Public Layout (Navbar & Footer) ──
+const getIcon = (iconName: string) => ICON_MAP[iconName] || ShieldPlus;
+
+// Helper to convert a service name to a URL slug (e.g. "General Checkup" -> "general-checkup")
+const generateSlug = (name: string) => {
+  return encodeURIComponent(name.toLowerCase().replace(/\s+/g, '-'));
+};
+
 function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileDropOpen, setMobileDropOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   
-  // Auth & Profile State
   const [user, setUser] = useState<any>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   
-  // Notifications State
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
+
+  const [dynamicServices, setDynamicServices] = useState<any[]>([]);
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -88,15 +73,12 @@ function PublicLayout() {
     const onScroll = () => setScrolled(window.scrollY > 50)
     window.addEventListener('scroll', onScroll)
     
-    // 1. Fetch initial user session
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
 
-    // 2. Listen for login/logout events automatically
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
 
-    // 3. Handle clicking outside dropdowns
     const handleClickOutside = (event: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileOpen(false)
@@ -107,6 +89,10 @@ function PublicLayout() {
     }
     document.addEventListener('mousedown', handleClickOutside)
 
+    supabase.from('clinic_services').select('*').order('id').then(({ data }) => {
+      if (data) setDynamicServices(data);
+    });
+
     return () => {
       window.removeEventListener('scroll', onScroll)
       authListener.subscription.unsubscribe()
@@ -114,7 +100,6 @@ function PublicLayout() {
     }
   }, [])
 
-  // 4. Fetch and listen to notifications when user is logged in
   useEffect(() => {
     let channel: any;
 
@@ -136,7 +121,6 @@ function PublicLayout() {
     if (user) {
       fetchNotifications();
 
-      // Realtime subscription for new notifications
       channel = supabase
         .channel('public:notifications')
         .on('postgres_changes', { 
@@ -198,7 +182,6 @@ function PublicLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
 
-            {/* Logo */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavClick('home')}>
               <div className="bg-[#0c4a6e] p-2 rounded-full">
                 <Smile className="w-8 h-8 text-white" />
@@ -209,7 +192,6 @@ function PublicLayout() {
               </div>
             </div>
 
-            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
               <button onClick={() => handleNavClick('home')} className="nav-link-underline text-gray-700 hover:text-[#0c4a6e] font-medium transition">Home</button>
 
@@ -222,12 +204,21 @@ function PublicLayout() {
                   <ChevronDown className="w-4 h-4 transition-transform duration-300 group-hover:rotate-180" />
                 </button>
                 <div className="absolute left-0 top-full mt-4 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 origin-top -translate-y-2 group-hover:translate-y-0 z-50">
-                  <div className="bg-white rounded-xl shadow-xl border border-gray-100 py-3">
-                    {services.map(({ icon: Icon, label, path }) => (
-                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-5 py-2.5 text-sm text-gray-700 hover:bg-sky-50 hover:text-[#0c4a6e] transition">
-                        <Icon className="w-4 h-4" /> {label}
-                      </Link>
-                    ))}
+                  <div className="bg-white rounded-xl shadow-xl border border-gray-100 py-3 max-h-[60vh] overflow-y-auto">
+                    {dynamicServices.map((service) => {
+                      const Icon = getIcon(service.icon);
+                      const slug = generateSlug(service.name);
+                      return (
+                        <Link 
+                          key={service.id} 
+                          to={`/services/${slug}`} 
+                          onClick={() => setMobileOpen(false)} 
+                          className="flex w-full items-center gap-3 px-5 py-2.5 text-sm text-gray-700 hover:bg-sky-50 hover:text-[#0c4a6e] transition text-left"
+                        >
+                          <Icon className="w-4 h-4" /> {service.name}
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -236,7 +227,6 @@ function PublicLayout() {
 
               <div className="flex items-center gap-4 pl-4 border-l border-gray-200">
                 
-                {/* PROFILE BUTTON */}
                 {user ? (
                   <div className="relative" ref={profileRef}>
                     <button 
@@ -276,7 +266,6 @@ function PublicLayout() {
                   Book Appointment
                 </Link>
 
-                {/* NOTIFICATION BELL */}
                 <div className="relative" ref={bellRef}>
                   <button 
                     onClick={handleBellClick}
@@ -290,7 +279,6 @@ function PublicLayout() {
                     )}
                   </button>
 
-                  {/* Notification Dropdown */}
                   {bellOpen && (
                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up">
                       <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
@@ -334,7 +322,6 @@ function PublicLayout() {
               </div>
             </div>
 
-            {/* Mobile Hamburger & Bell */}
             <div className="md:hidden flex items-center gap-3">
               <button onClick={handleBellClick} className="relative p-2">
                 <Bell className="w-6 h-6 text-[#0c4a6e]" />
@@ -352,7 +339,6 @@ function PublicLayout() {
           </div>
         </div>
 
-        {/* Mobile Notification Dropdown */}
         {bellOpen && (
           <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg max-h-80 overflow-y-auto z-50">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900">
@@ -390,7 +376,6 @@ function PublicLayout() {
           </div>
         )}
 
-        {/* Mobile Menu */}
         {mobileOpen && !bellOpen && (
           <div className="md:hidden bg-white border-t z-40 relative">
             <div className="px-4 pt-2 pb-6 space-y-2">
@@ -404,11 +389,19 @@ function PublicLayout() {
                 </div>
                 {mobileDropOpen && (
                   <div className="pl-6 pr-3 py-2 space-y-2 bg-gray-50/50 rounded-lg mt-1 border-l-2 border-sky-200 ml-3">
-                    {services.map(({ label, path }) => (
-                      <Link key={label} to={path} onClick={() => setMobileOpen(false)} className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:text-[#0c4a6e] rounded-md">
-                        {label}
-                      </Link>
-                    ))}
+                    {dynamicServices.map((service) => {
+                      const slug = generateSlug(service.name);
+                      return (
+                        <Link 
+                          key={service.id} 
+                          to={`/services/${slug}`} 
+                          onClick={() => setMobileOpen(false)} 
+                          className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:text-[#0c4a6e] rounded-md"
+                        >
+                          {service.name}
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -465,11 +458,14 @@ function PublicLayout() {
             <div>
               <h4 className="font-semibold text-lg mb-4">Services</h4>
               <ul className="space-y-2 text-sky-200 text-sm">
-                {services.map(s => (
-                  <li key={s.label}>
-                    <Link to={s.path} className="hover:text-white transition text-left">{s.label}</Link>
-                  </li>
-                ))}
+                {dynamicServices.slice(0, 5).map(s => {
+                  const slug = generateSlug(s.name);
+                  return (
+                    <li key={s.id}>
+                      <Link to={`/services/${slug}`} className="hover:text-white transition text-left">{s.name}</Link>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </div>
@@ -482,12 +478,21 @@ function PublicLayout() {
   )
 }
 
-// ── 2. The Landing Page Content ──
 function LandingPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 👉 ADDED STATE FOR "SEE MORE" TOGGLE
+  const [dynamicServices, setDynamicServices] = useState<any[]>([]);
+  const [showAllServices, setShowAllServices] = useState(false);
+
+  useEffect(() => {
+    supabase.from('clinic_services').select('*').order('id').then(({ data }) => {
+      if (data) setDynamicServices(data);
+    });
+  }, []);
 
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg })
@@ -522,6 +527,9 @@ function LandingPage() {
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // 👉 LOGIC TO LIMIT SERVICES TO 6
+  const displayedServices = showAllServices ? dynamicServices : dynamicServices.slice(0, 6);
 
   return (
     <>
@@ -588,19 +596,42 @@ function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {services.map(({ icon: Icon, label, desc, bg, color, linkColor, path }) => (
-              <Link key={label} to={path} className="service-card block bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 group cursor-pointer">
-                <div className={`service-icon ${bg} w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform duration-300`}>
-                  <Icon className={`w-8 h-8 ${color}`} />
-                </div>
-                <h3 className="font-serif text-xl font-bold text-gray-900 mb-3">{label}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed mb-4">{desc}</p>
-                <span className={`${linkColor} font-semibold text-sm flex items-center gap-1 group-hover:gap-2 transition-all`}>
-                  Learn more <ArrowRight className="w-4 h-4" />
-                </span>
-              </Link>
-            ))}
+            {/* 👉 USES THE SLICED ARRAY NOW */}
+            {displayedServices.map((service) => {
+              const Icon = getIcon(service.icon);
+              const slug = generateSlug(service.name);
+              return (
+                <Link 
+                  key={service.id} 
+                  to={`/services/${slug}`} 
+                  className="service-card block bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 group cursor-pointer"
+                >
+                  <div className={`service-icon bg-sky-50 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform duration-300`}>
+                    <Icon className="w-8 h-8 text-[#0c4a6e]" />
+                  </div>
+                  <h3 className="font-serif text-xl font-bold text-gray-900 mb-3">{service.name}</h3>
+                  <p className="text-gray-600 text-sm leading-relaxed mb-4">{service.description}</p>
+                  <span className={`text-[#0c4a6e] font-semibold text-sm flex items-center gap-1 group-hover:gap-2 transition-all`}>
+                    Learn more <ArrowRight className="w-4 h-4" />
+                  </span>
+                </Link>
+              );
+            })}
           </div>
+
+          {/* 👉 SEE MORE BUTTON */}
+          {dynamicServices.length > 6 && (
+            <div className="mt-12 text-center fade-in">
+              <button
+                onClick={() => setShowAllServices(!showAllServices)}
+                className="bg-white border-2 border-[#0c4a6e] text-[#0c4a6e] px-8 py-3 rounded-full font-semibold hover:bg-sky-50 transition inline-flex items-center gap-2 shadow-sm"
+              >
+                {showAllServices ? 'Show Less' : 'See All Services'}
+                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showAllServices ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          )}
+
         </div>
       </section>
 
@@ -710,7 +741,6 @@ function LandingPage() {
   )
 }
 
-// ── 3. SECURE ADMIN ROUTE GUARD ──
 function AdminRoute() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -770,7 +800,6 @@ function AdminRoute() {
   return <Outlet />;
 }
 
-// ── 4. Router Setup ──
 export default function App() {
   return (
     <BrowserRouter>
@@ -778,16 +807,14 @@ export default function App() {
         <Route element={<PublicLayout />}>
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<About />} /> 
-          <Route path="/services/tooth-filling" element={<ToothFilling />} />
-          <Route path="/services/cleaning" element={<Cleaning />} />
-          <Route path="/services/extraction" element={<Extraction />} />
-          <Route path="/services/sealants" element={<Sealants />} />
-          <Route path="/services/fluoride" element={<Fluoride />} />
+          
+          {/* 👉 THE NEW SMART DYNAMIC ROUTE CATCHER */}
+          <Route path="/services/:serviceId" element={<ServiceDetail />} />
         </Route>
-        
+
         <Route path="/login" element={<Login />} />
         <Route path="/appointment" element={<Appointment />} />
-        
+
         <Route element={<AdminRoute />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
@@ -796,8 +823,8 @@ export default function App() {
             <Route path="patients" element={<AdminPatients />} />
             <Route path="treatment" element={<AdminTreatment />} />
             <Route path="tracking" element={<AdminTracking />} />
-            {/* 👉 INJECT ADMIN MESSAGES ROUTE HERE */}
             <Route path="messages" element={<AdminMessages />} />
+            <Route path="services" element={<AdminServices />} />
           </Route>
         </Route>
       </Routes>

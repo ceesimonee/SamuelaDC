@@ -25,16 +25,13 @@ type Appointment = {
   status: string;
 };
 
-const CLINIC_SERVICES = [
-  'General Checkup', 'Tooth Filling Restoration', 
-  'Cleaning & Prophylaxis', 'Tooth Extraction', 'Pit & Fissure Sealants', 
-  'Fluoride Application', 'Other'
-];
-
 export default function AdminQueue() {
   const [queue, setQueue] = useState<Patient[]>([]);
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null);
   
+  // 👉 DYNAMIC SERVICES STATE
+  const [clinicServices, setClinicServices] = useState<string[]>(['General Checkup']);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'appointments' | 'manual'>('appointments');
   const [weekAppointments, setWeekAppointments] = useState<Appointment[]>([]);
@@ -49,15 +46,24 @@ export default function AdminQueue() {
   const [isSendingSms, setIsSendingSms] = useState(false);
 
   const [smsQuota, setSmsQuota] = useState({ balance: 188, total: 202 });
-  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin'); // ── AUDIT STATE ──
+  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin');
 
   useEffect(() => {
     fetchQueue();
     fetchSmsQuota();
     fetchAdminSession();
+    fetchClinicServices(); // Fetch Dynamic Services on Mount
   }, []);
 
-  // ── NEW: Fetch Admin Email for Audit Log ──
+  // Fetch dynamic services for the manual entry dropdown
+  const fetchClinicServices = async () => {
+    const { data } = await supabase.from('clinic_services').select('name').order('id');
+    if (data && data.length > 0) {
+      setClinicServices(data.map(s => s.name));
+      setManualForm(prev => ({ ...prev, service: data[0].name })); // Default to first service
+    }
+  };
+
   const fetchAdminSession = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.email) {
@@ -65,7 +71,6 @@ export default function AdminQueue() {
     }
   };
 
-  // ── NEW: Reusable Audit Log Helper ──
   const logAuditAction = async (action: string, patientName: string, details: string) => {
     await supabase.from('audit_logs').insert([{
       admin_email: adminEmail,
@@ -141,8 +146,28 @@ export default function AdminQueue() {
     fetchWeekAppointments();
   };
 
+  // 👉 FIXED: Bulletproof logic to extract sequential ticket numbers
+  const getNextTicketNumber = async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const { data } = await supabase
+      .from('queue')
+      .select('ticket')
+      .gte('created_at', todayStr)
+      .order('created_at', { ascending: false });
+      
+    if (!data || data.length === 0) {
+      return "1";
+    }
+    
+    // Completely strip out '#' before parsing, ensuring we get a clean integer
+    const numbers = data.map(q => parseInt(q.ticket.replace(/\D/g, ''))).filter(n => !isNaN(n));
+    const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+    return nextNum.toString();
+  };
+
   const addAppointmentToQueue = async (apt: Appointment) => {
-    const newTicket = `#${Math.floor(Math.random() * 900) + 100}`;
+    const newTicket = await getNextTicketNumber();
     const { error } = await supabase.from('queue').insert([{
       ticket: newTicket,
       name: apt.name,
@@ -155,9 +180,7 @@ export default function AdminQueue() {
     }]);
 
     if (!error) {
-      // 👉 AUDIT LOG
       await logAuditAction('Add to Queue', apt.name, `Added scheduled appointment (Ticket: ${newTicket}) to the live waiting queue.`);
-      
       setIsModalOpen(false);
       fetchQueue();
     } else {
@@ -169,7 +192,7 @@ export default function AdminQueue() {
     e.preventDefault();
     setIsSubmittingManual(true);
     
-    const newTicket = `#${Math.floor(Math.random() * 900) + 100}`;
+    const newTicket = await getNextTicketNumber();
     const { error } = await supabase.from('queue').insert([{
       ticket: newTicket,
       name: manualForm.name,
@@ -181,11 +204,9 @@ export default function AdminQueue() {
     }]);
 
     if (!error) {
-      // 👉 AUDIT LOG
       await logAuditAction('Add Manual Queue', manualForm.name, `Manually added walk-in (Ticket: ${newTicket}) to the live waiting queue for ${manualForm.service}.`);
-      
       setIsModalOpen(false);
-      setManualForm({ name: '', phone: '', service: 'General Checkup' }); 
+      setManualForm({ name: '', phone: '', service: clinicServices[0] || 'General Checkup' }); 
       fetchQueue();
     } else {
       alert("Failed to add manual walk-in.");
@@ -202,7 +223,6 @@ export default function AdminQueue() {
     }
     await supabase.from('queue').update({ status: 'serving' }).eq('id', nextPatient.id);
     
-    // 👉 AUDIT LOG
     await logAuditAction('Call Next Patient', nextPatient.name, `Called ticket ${nextPatient.ticket} to be served.`);
     
     fetchQueue();
@@ -213,7 +233,6 @@ export default function AdminQueue() {
       setIsSaved(true);
       await supabase.from('queue').update({ status: 'completed' }).eq('id', currentPatient.id);
       
-      // 👉 AUDIT LOG
       await logAuditAction('Complete Treatment', currentPatient.name, `Marked treatment for ticket ${currentPatient.ticket} as completed.`);
       
       setTimeout(() => {
@@ -224,14 +243,12 @@ export default function AdminQueue() {
     }
   };
 
-  // ── NEW: FIXED NO SHOW LOGIC ──
   const handleNoShow = async () => {
     if (!currentPatient) return;
     
     if (window.confirm(`Are you sure you want to mark ${currentPatient.name} as a No Show? This will remove them from the active serving slot.`)) {
       await supabase.from('queue').update({ status: 'no_show' }).eq('id', currentPatient.id);
       
-      // 👉 AUDIT LOG
       await logAuditAction('No Show', currentPatient.name, `Marked ticket ${currentPatient.ticket} as a No Show.`);
       
       setCurrentPatient(null);
@@ -239,7 +256,6 @@ export default function AdminQueue() {
     }
   };
 
-  // ── 🛡️ GRACEFUL DEGRADATION: MANUAL CALL FALLBACK ──
   const handleNotifySms = async () => {
     if (!currentPatient) return;
 
@@ -284,17 +300,13 @@ export default function AdminQueue() {
       setSmsQuota(prev => ({ ...prev, balance: newBalance }));
       await supabase.from('clinic_settings').update({ sms_balance: newBalance }).eq('id', 1);
 
-      // 👉 AUDIT LOG
       await logAuditAction('Send SMS', currentPatient.name, `Successfully sent SMS alert to ${formattedPhone}.`);
       
       alert(`SMS Alert successfully sent to ${currentPatient.name}.`);
 
     } catch (error: any) {
       console.warn("SMS Alert Failed, initializing Manual Fallback...", error.message);
-      
-      // THE FALLBACK: Admin UI Alert
       alert(`⚠️ SMS ALERT FAILED (API Offline or 0 Credits).\n\nFALLBACK PROCEDURE:\nPlease manually call ${currentPatient.name} at ${currentPatient.phone} to notify them of their turn.`);
-      
     } finally {
       setIsSendingSms(false);
       setIsNotifyOpen(false);
@@ -420,7 +432,6 @@ export default function AdminQueue() {
                     <><CheckCircle className="w-4 h-4 text-accent-600" /> Done</>
                   )}
                 </button>
-                {/* ── UPDATED: Hooked up handleNoShow ── */}
                 <button 
                   onClick={handleNoShow} 
                   disabled={!currentPatient}
@@ -453,7 +464,7 @@ export default function AdminQueue() {
                   <div key={p.id} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:border-dental-300 transition shadow-sm fade-in">
                     <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${index === 0 ? 'bg-dental-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                        {p.ticket.replace('#', '')}
+                        {p.ticket}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
@@ -579,7 +590,8 @@ export default function AdminQueue() {
                       onChange={e => setManualForm({...manualForm, service: e.target.value})}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-white text-sm"
                     >
-                      {CLINIC_SERVICES.map(service => (
+                      {/* 👉 DYNAMICALLY POPULATED FROM DATABASE */}
+                      {clinicServices.map(service => (
                         <option key={service} value={service}>{service}</option>
                       ))}
                     </select>
