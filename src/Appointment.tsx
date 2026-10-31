@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from './lib/supabaseClient'; 
+import { supabase } from './lib/supabase'; 
 import {
   Smile, ArrowLeft, MapPin, Phone, Clock,
   AlertCircle, ChevronDown, CheckCircle2, Lock, LogIn, UserCheck, CalendarX2
 } from 'lucide-react';
 
-// ── NEW: Bulletproof time parser for PostgreSQL 'time' type ──
 const normalizeTime = (timeStr: string) => {
   if (!timeStr) return '';
-  return timeStr.substring(0, 5); // Forces "15:00:00" or "15:00:00+00" to exactly "15:00"
+  return timeStr.substring(0, 5); 
 };
 
 const format12Hour = (time24: string) => {
@@ -26,15 +25,15 @@ export default function Appointment() {
   const [showToast, setShowToast] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Auth Check State
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authenticatedUser, setAuthenticatedUser] = useState<any>(null);
 
-  // Concurrency / Double-Booking State
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  
+  // 👉 NEW: State to hold our dynamic database services
+  const [dynamicServices, setDynamicServices] = useState<string[]>([]);
 
-  // Form State
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -46,7 +45,6 @@ export default function Appointment() {
     note: ''
   });
 
-  // ─── 1. CHECK IF USER IS LOGGED IN ON LOAD ───
   useEffect(() => {
     const checkUserSession = async () => {
       setIsCheckingAuth(true);
@@ -73,7 +71,16 @@ export default function Appointment() {
       setIsCheckingAuth(false);
     };
 
+    // 👉 NEW: Fetch dynamic services for the dropdown
+    const fetchServices = async () => {
+      const { data } = await supabase.from('clinic_services').select('name').order('id');
+      if (data) {
+        setDynamicServices(data.map(s => s.name));
+      }
+    };
+
     checkUserSession();
+    fetchServices();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthenticatedUser(session?.user || null);
@@ -84,7 +91,6 @@ export default function Appointment() {
     };
   }, []);
 
-  // ─── 2. FETCH BOOKED & PENDING SLOTS WHEN DATE CHANGES ───
   useEffect(() => {
     const fetchBookingsForDate = async () => {
       if (!formData.date) {
@@ -121,7 +127,6 @@ export default function Appointment() {
         const taken = data
           .filter(app => {
             const stat = (app.status || '').toLowerCase();
-            // Completely block ANY slot that is not explicitly cancelled, declined, or rejected
             return !['cancelled', 'declined', 'rejected', 'completed'].includes(stat);
           })
           .map(app => normalizeTime(app.appointment_time));
@@ -147,7 +152,6 @@ export default function Appointment() {
     setFormData({ ...formData, date: selectedDate, time: '' }); 
   };
 
-  // ─── 3. HANDLE APPOINTMENT SUBMISSION (STRICT LOCK) ───
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -164,7 +168,6 @@ export default function Appointment() {
 
     setIsSubmitting(true);
 
-    // 🔴 FINAL CONCURRENCY CHECK
     const { data: conflictCheck, error: fetchErr } = await supabase
       .from('appointments')
       .select('appointment_time, status')
@@ -232,7 +235,6 @@ export default function Appointment() {
 
   return (
     <div className="font-sans text-gray-800 antialiased bg-gray-50 min-h-screen flex flex-col">
-      {/* ── Navbar ── */}
       <nav className="w-full z-50 glass-effect border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
@@ -258,7 +260,6 @@ export default function Appointment() {
         </div>
       </nav>
 
-      {/* ── Main Content ── */}
       <main className="flex-grow pt-10 pb-20 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-dental-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-slow"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse-slow" style={{ animationDelay: '2s' }}></div>
@@ -272,7 +273,6 @@ export default function Appointment() {
 
           <div className="grid lg:grid-cols-3 gap-10">
             
-            {/* Sidebar Information */}
             <div className="lg:col-span-1 space-y-6 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
               <div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100">
                 <h3 className="font-serif text-xl font-bold text-gray-900 mb-6">Contact Information</h3>
@@ -311,11 +311,9 @@ export default function Appointment() {
               </div>
             </div>
 
-            {/* Form Section */}
             <div className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
               <div className="bg-white rounded-3xl p-8 sm:p-10 shadow-xl border border-gray-100 relative overflow-hidden">
                 
-                {/* ── AUTHENTICATION GATEKEEPER OVERLAY FOR GUESTS ── */}
                 {!isCheckingAuth && !authenticatedUser && (
                   <div className="absolute inset-0 bg-white/95 backdrop-blur-md z-20 flex flex-col items-center justify-center p-8 text-center animate-fade-in-up">
                     <div className="w-16 h-16 bg-dental-100 text-dental-600 rounded-2xl flex items-center justify-center mb-5 shadow-sm">
@@ -395,11 +393,10 @@ export default function Appointment() {
                           className="w-full appearance-none px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-gray-50 focus:bg-white text-gray-700 disabled:opacity-60"
                         >
                           <option value="" disabled>Select a primary service</option>
-                          <option value="Tooth Filling Restoration">Tooth Filling Restoration</option>
-                          <option value="Cleaning & Prophylaxis">Cleaning & Prophylaxis</option>
-                          <option value="Tooth Extraction">Tooth Extraction</option>
-                          <option value="Pit & Fissure Sealants">Pit & Fissure Sealants</option>
-                          <option value="Fluoride Application">Fluoride Application</option>
+                          {/* 👉 DYNAMICALLY POPULATED FROM DATABASE */}
+                          {dynamicServices.map(service => (
+                            <option key={service} value={service}>{service}</option>
+                          ))}
                           <option value="Other">Other / Unsure</option>
                         </select>
                         <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
@@ -485,7 +482,6 @@ export default function Appointment() {
         </div>
       </main>
 
-      {/* ── Toast Notification ── */}
       <div className={`fixed bottom-4 right-4 bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 ${showToast ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0'}`}>
         <CheckCircle2 className="w-6 h-6" />
         <div>
