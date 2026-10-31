@@ -5,14 +5,12 @@ import Login from './Login'
 import Appointment from './Appointment'
 import About from './About' 
 
-// You can safely delete these 5 files later if you want, as the new dynamic system replaces them!
 import ToothFilling from './services/ToothFilling'
 import Cleaning from './services/Cleaning';
 import Extraction from './services/Extraction';
 import Sealants from './services/Sealants';
 import Fluoride from './services/Fluoride';
 
-// 👉 IMPORTING NEW DYNAMIC SERVICE PAGE
 import ServiceDetail from './ServiceDetail';
 
 import AdminLayout from './AdminLayout'
@@ -34,10 +32,9 @@ import {
   ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   MapPin, Phone, Mail, CheckCircle2,
   UserCircle2, Menu, X, LogOut, Bell, ShieldAlert,
-  Heart, Star, Shield, PlusCircle
+  Heart, Star, Shield, PlusCircle, AlertCircle
 } from 'lucide-react'
 
-// 👉 DYNAMIC ICON MAPPER FOR DATABASE SERVICES
 const ICON_MAP: Record<string, any> = {
   ShieldPlus, Sparkles, MinusCircle, ShieldCheck, Activity,
   Heart, Star, Shield, PlusCircle
@@ -45,7 +42,6 @@ const ICON_MAP: Record<string, any> = {
 
 const getIcon = (iconName: string) => ICON_MAP[iconName] || ShieldPlus;
 
-// Helper to convert a service name to a URL slug (e.g. "General Checkup" -> "general-checkup")
 const generateSlug = (name: string) => {
   return encodeURIComponent(name.toLowerCase().replace(/\s+/g, '-'));
 };
@@ -64,6 +60,7 @@ function PublicLayout() {
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
 
+  const [pendingConfirmations, setPendingConfirmations] = useState<any[]>([]);
   const [dynamicServices, setDynamicServices] = useState<any[]>([]);
 
   const location = useLocation()
@@ -103,23 +100,35 @@ function PublicLayout() {
   useEffect(() => {
     let channel: any;
 
-    const fetchNotifications = async () => {
+    const fetchUserData = async () => {
       if (!user) return;
-      const { data } = await supabase
+      
+      const { data: notifs } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (data) {
-        setNotifications(data);
-        setUnreadCount(data.filter(n => !n.is_read).length);
+      if (notifs) {
+        setNotifications(notifs);
+        setUnreadCount(notifs.filter(n => !n.is_read).length);
+      }
+
+      const { data: pendingAppts } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'awaiting_confirmation');
+
+      if (pendingAppts) {
+        const validPending = pendingAppts.filter(app => new Date(app.expires_at) > new Date());
+        setPendingConfirmations(validPending);
       }
     };
 
     if (user) {
-      fetchNotifications();
+      fetchUserData();
 
       channel = supabase
         .channel('public:notifications')
@@ -131,6 +140,7 @@ function PublicLayout() {
         }, (payload) => {
           setNotifications(prev => [payload.new, ...prev]);
           setUnreadCount(prev => prev + 1);
+          fetchUserData();
         })
         .subscribe();
     }
@@ -146,6 +156,7 @@ function PublicLayout() {
     setBellOpen(false)
     setMobileOpen(false)
     setNotifications([])
+    setPendingConfirmations([])
     setUnreadCount(0)
     navigate('/login')
   }
@@ -175,6 +186,29 @@ function PublicLayout() {
       document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }
+
+  // 👉 FIXED: Now also inserts an automated chat message into the Admin Inbox for persistent tracking
+  const confirmAppointment = async (app: any) => {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'confirmed' })
+      .eq('id', app.id);
+      
+    if (!error) {
+      // Alert the Admin Inbox!
+      await supabase.from('chat_messages').insert([{
+        user_id: user.id,
+        sender_role: 'patient',
+        message: `✅ AUTOMATED SYSTEM MESSAGE: I have successfully confirmed my appointment for ${app.service} on ${new Date(app.appointment_date).toLocaleDateString()} at ${app.appointment_time}.`,
+        is_read: false
+      }]);
+
+      setPendingConfirmations(prev => prev.filter(a => a.id !== app.id));
+      alert("Success! Your appointment is now fully confirmed and secured.");
+    } else {
+      alert("Failed to confirm. The slot may have expired.");
+    }
+  };
 
   return (
     <div className="font-sans text-gray-800 antialiased min-h-screen flex flex-col">
@@ -272,19 +306,41 @@ function PublicLayout() {
                     className="p-2 rounded-full border-2 border-transparent hover:bg-gray-100 transition-colors focus:outline-none relative"
                   >
                     <Bell className="w-6 h-6 text-slate-600" />
-                    {unreadCount > 0 && (
+                    {(unreadCount > 0 || pendingConfirmations.length > 0) && (
                       <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border-2 border-white">
-                        {unreadCount > 9 ? '9+' : unreadCount}
+                        {(unreadCount + pendingConfirmations.length) > 9 ? '9+' : (unreadCount + pendingConfirmations.length)}
                       </span>
                     )}
                   </button>
 
                   {bellOpen && (
-                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up">
-                      <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-fade-in-up flex flex-col max-h-[80vh]">
+                      <div className="px-4 py-3 border-b border-gray-50 shrink-0">
                         <h3 className="font-bold text-gray-900">Notifications</h3>
                       </div>
-                      <div className="max-h-80 overflow-y-auto">
+                      
+                      <div className="overflow-y-auto flex-grow">
+                        {pendingConfirmations.map(app => (
+                          <div key={app.id} className="px-4 py-4 bg-amber-50 border-b border-amber-100">
+                            <div className="flex gap-3 items-start mb-2">
+                              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                              <div>
+                                <h4 className="font-bold text-amber-900 text-sm">Action Required</h4>
+                                <p className="text-amber-800 text-xs mt-1 leading-relaxed">
+                                  Your {app.service} on {new Date(app.appointment_date).toLocaleDateString()} at {app.appointment_time} is approved! 
+                                  Please confirm to secure your slot.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="pl-8 flex gap-2">
+                              {/* 👉 Updated Button to pass full object */}
+                              <button onClick={() => confirmAppointment(app)} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-1 text-center shadow-sm">
+                                Confirm Appointment
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
                         {!user ? (
                           <div className="px-4 py-6 text-center text-gray-500 text-sm">
                             Please log in to view your notifications.
@@ -292,7 +348,7 @@ function PublicLayout() {
                               Go to Login
                             </Link>
                           </div>
-                        ) : notifications.length === 0 ? (
+                        ) : notifications.length === 0 && pendingConfirmations.length === 0 ? (
                           <div className="px-4 py-6 text-center text-gray-500 text-sm">
                             No notifications right now.
                           </div>
@@ -302,7 +358,8 @@ function PublicLayout() {
                               <div className="flex gap-3 items-start">
                                 <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
                                   notif.type === 'success' ? 'bg-green-500' :
-                                  notif.type === 'error' ? 'bg-red-500' : 'bg-sky-500'
+                                  notif.type === 'error' ? 'bg-red-500' : 
+                                  notif.type === 'action_required' ? 'bg-amber-500' : 'bg-sky-500'
                                 }`} />
                                 <div>
                                   <p className="text-gray-800 leading-snug">{notif.message}</p>
@@ -325,9 +382,9 @@ function PublicLayout() {
             <div className="md:hidden flex items-center gap-3">
               <button onClick={handleBellClick} className="relative p-2">
                 <Bell className="w-6 h-6 text-[#0c4a6e]" />
-                {unreadCount > 0 && (
+                {(unreadCount > 0 || pendingConfirmations.length > 0) && (
                   <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border-2 border-white">
-                    {unreadCount}
+                    {(unreadCount + pendingConfirmations.length)}
                   </span>
                 )}
               </button>
@@ -340,39 +397,64 @@ function PublicLayout() {
         </div>
 
         {bellOpen && (
-          <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg max-h-80 overflow-y-auto z-50">
-            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900">
+          <div className="md:hidden absolute w-full bg-white border-t border-gray-100 shadow-lg z-50 flex flex-col max-h-[70vh]">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 font-bold text-gray-900 shrink-0">
               Notifications
             </div>
-            {!user ? (
-              <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                Please log in to view your notifications.
-                <Link to="/login" onClick={() => setBellOpen(false)} className="block mt-2 text-[#0c4a6e] hover:underline font-bold">
-                  Go to Login
-                </Link>
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                No notifications right now.
-              </div>
-            ) : (
-              notifications.map(notif => (
-                <div key={notif.id} className={`px-4 py-3 border-b border-gray-50 text-sm ${notif.is_read ? 'bg-white' : 'bg-sky-50'}`}>
-                  <div className="flex gap-3 items-start">
-                    <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
-                      notif.type === 'success' ? 'bg-green-500' :
-                      notif.type === 'error' ? 'bg-red-500' : 'bg-sky-500'
-                    }`} />
+            
+            <div className="overflow-y-auto flex-grow pb-4">
+              {pendingConfirmations.map(app => (
+                <div key={app.id} className="px-4 py-4 bg-amber-50 border-b border-amber-100">
+                  <div className="flex gap-3 items-start mb-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-gray-800 leading-snug">{notif.message}</p>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        {new Date(notif.created_at).toLocaleDateString()}
+                      <h4 className="font-bold text-amber-900 text-sm">Action Required</h4>
+                      <p className="text-amber-800 text-xs mt-1 leading-relaxed">
+                        Your {app.service} on {new Date(app.appointment_date).toLocaleDateString()} at {app.appointment_time} is approved! 
+                        Please confirm to secure your slot.
                       </p>
                     </div>
                   </div>
+                  <div className="pl-8 flex gap-2">
+                    {/* 👉 Updated Button to pass full object */}
+                    <button onClick={() => confirmAppointment(app)} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition flex-1 text-center shadow-sm">
+                      Confirm Appointment
+                    </button>
+                  </div>
                 </div>
-              ))
-            )}
+              ))}
+
+              {!user ? (
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                  Please log in to view your notifications.
+                  <Link to="/login" onClick={() => setBellOpen(false)} className="block mt-2 text-[#0c4a6e] hover:underline font-bold">
+                    Go to Login
+                  </Link>
+                </div>
+              ) : notifications.length === 0 && pendingConfirmations.length === 0 ? (
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                  No notifications right now.
+                </div>
+              ) : (
+                notifications.map(notif => (
+                  <div key={notif.id} className={`px-4 py-3 border-b border-gray-50 text-sm ${notif.is_read ? 'bg-white' : 'bg-sky-50'}`}>
+                    <div className="flex gap-3 items-start">
+                      <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
+                        notif.type === 'success' ? 'bg-green-500' :
+                        notif.type === 'error' ? 'bg-red-500' : 
+                        notif.type === 'action_required' ? 'bg-amber-500' : 'bg-sky-500'
+                      }`} />
+                      <div>
+                        <p className="text-gray-800 leading-snug">{notif.message}</p>
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          {new Date(notif.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 
@@ -484,7 +566,6 @@ function LandingPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' })
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 👉 ADDED STATE FOR "SEE MORE" TOGGLE
   const [dynamicServices, setDynamicServices] = useState<any[]>([]);
   const [showAllServices, setShowAllServices] = useState(false);
 
@@ -528,7 +609,6 @@ function LandingPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // 👉 LOGIC TO LIMIT SERVICES TO 6
   const displayedServices = showAllServices ? dynamicServices : dynamicServices.slice(0, 6);
 
   return (
@@ -596,7 +676,6 @@ function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* 👉 USES THE SLICED ARRAY NOW */}
             {displayedServices.map((service) => {
               const Icon = getIcon(service.icon);
               const slug = generateSlug(service.name);
@@ -619,7 +698,6 @@ function LandingPage() {
             })}
           </div>
 
-          {/* 👉 SEE MORE BUTTON */}
           {dynamicServices.length > 6 && (
             <div className="mt-12 text-center fade-in">
               <button
@@ -808,7 +886,6 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<About />} /> 
           
-          {/* 👉 THE NEW SMART DYNAMIC ROUTE CATCHER */}
           <Route path="/services/:serviceId" element={<ServiceDetail />} />
         </Route>
 

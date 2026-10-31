@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { supabase } from './lib/supabase'; // Adjust path if needed
+import { supabase } from './lib/supabase';
 import emailjs from '@emailjs/browser';
 import {
   Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight,
-  Check, X, User, Activity, Clock, Mail, Phone
+  Check, X, User, Activity, Clock, Mail, Phone, ShieldAlert
 } from 'lucide-react';
 
 type Appointment = {
@@ -16,6 +16,7 @@ type Appointment = {
   date: Date;
   time?: string;
   note?: string | null;
+  status: string;
 };
 
 type Request = {
@@ -39,19 +40,32 @@ export default function AdminAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin'); // ── AUDIT STATE ──
+  const [adminEmail, setAdminEmail] = useState<string>('Unknown Admin');
 
-  // ─── MODAL STATE ───
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<Appointment[]>([]);
   const [isDayDetailsModalOpen, setIsDayDetailsModalOpen] = useState(false);
   const [selectedDateTitle, setSelectedDateTitle] = useState("");
 
+  const [approvalModal, setApprovalModal] = useState<{isOpen: boolean, req: Request | null, duration: number}>({isOpen: false, req: null, duration: 1});
+  const [isSendingApproval, setIsSendingApproval] = useState(false);
+
   useEffect(() => {
     fetchAppointments();
     fetchAdminSession();
+
+    // 👉 NEW: Auto-refresh calendar if a patient confirms while the admin is viewing this page
+    const channel = supabase
+      .channel(`admin_appts_page_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+        fetchAppointments();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // ── NEW: Fetch Admin Email for Audit Log ──
   const fetchAdminSession = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.email) {
@@ -59,7 +73,6 @@ export default function AdminAppointments() {
     }
   };
 
-  // ── NEW: Reusable Audit Log Helper ──
   const logAuditAction = async (action: string, patientName: string, details: string) => {
     await supabase.from('audit_logs').insert([{
       admin_email: adminEmail,
@@ -85,7 +98,7 @@ export default function AdminAppointments() {
       const [y, m, d] = row.appointment_date.split('-');
       const parsedDate = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
 
-      if (row.status === 'confirmed') {
+      if (['confirmed', 'awaiting_confirmation'].includes(row.status)) {
         confirmedList.push({
           id: row.id,
           user_id: row.user_id,
@@ -95,7 +108,8 @@ export default function AdminAppointments() {
           service: row.service,
           date: parsedDate,
           time: row.appointment_time,
-          note: row.note
+          note: row.note,
+          status: row.status
         });
       } else if (row.status === 'pending') {
         pendingList.push({
@@ -118,7 +132,6 @@ export default function AdminAppointments() {
     setIsLoading(false);
   };
 
-  // ─── CALENDAR LOGIC ───
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
 
@@ -150,16 +163,44 @@ export default function AdminAppointments() {
     }
   };
 
-  // ─── ADMIN ACTIONS (Confirm / Decline) ───
-  const handleConfirm = async (req: Request) => {
+  const openApprovalModal = (req: Request) => {
+    setApprovalModal({ isOpen: true, req, duration: 1 });
+  };
+
+  const generateBlockedSlots = (startTime: string, durationHrs: number) => {
+    if (durationHrs <= 1 || !startTime) return [];
+    const slots = [];
+    const [hourStr, minuteStr] = startTime.split(':');
+    let hour = parseInt(hourStr, 10);
+    
+    for (let i = 1; i < durationHrs; i++) {
+      const nextHour = hour + i;
+      slots.push(`${nextHour.toString().padStart(2, '0')}:${minuteStr}`);
+    }
+    return slots;
+  };
+
+  const submitApproval = async () => {
+    if (!approvalModal.req) return;
+    setIsSendingApproval(true);
+    
+    const req = approvalModal.req;
+    const blockedSlots = generateBlockedSlots(req.time || '', approvalModal.duration);
+    
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 2);
+
     const { error } = await supabase
       .from('appointments')
-      .update({ status: 'confirmed' })
+      .update({ 
+        status: 'awaiting_confirmation',
+        blocked_slots: blockedSlots,
+        expires_at: expiresAt.toISOString()
+      })
       .eq('id', req.id);
 
     if (!error) {
-      // 👉 AUDIT LOG
-      await logAuditAction('Approve Appointment', req.name, `Approved requested appointment for ${req.service} on ${req.dateStr} at ${req.time}`);
+      await logAuditAction('Sent Confirmation Request', req.name, `Sent confirmation request for ${req.service} (Duration: ${approvalModal.duration}hr). Slots blocked: ${blockedSlots.join(', ')}`);
 
       setAppointments([...appointments, {
         id: req.id,
@@ -170,7 +211,8 @@ export default function AdminAppointments() {
         service: req.service,
         date: req.targetDate,
         time: req.time,
-        note: req.note
+        note: req.note,
+        status: 'awaiting_confirmation'
       }]);
       setRequests(prev => prev.filter(r => r.id !== req.id));
 
@@ -179,34 +221,16 @@ export default function AdminAppointments() {
       if (req.user_id) {
         await supabase.from('notifications').insert([{
           user_id: req.user_id,
-          message: `Great news! Your appointment for ${req.service} on ${formattedDate} at ${req.time} has been approved.`,
-          type: 'success'
+          message: `ACTION REQUIRED: Your appointment for ${req.service} on ${formattedDate} at ${req.time} is approved! Please confirm within 2 hours to secure your slot.`,
+          type: 'action_required'
         }]);
       }
 
-      if (req.email) {
-        try {
-          await emailjs.send(
-            'service_i3xusfo',
-            'template_9b2dzwa',
-            {
-              email: req.email,
-              name: req.name,
-              service: req.service,
-              date: formattedDate,
-              time: req.time || '',
-              phone: req.phone || '',
-              notes: req.note || 'None provided'
-            },
-            'zfhT9yUDdqKQyMJ8X'
-          );
-        } catch (emailErr) {
-          console.error('Failed to send confirmation email:', emailErr);
-        }
-      }
+      setApprovalModal({ isOpen: false, req: null, duration: 1 });
     } else {
       alert("Error confirming: " + error.message);
     }
+    setIsSendingApproval(false);
   };
 
   const handleDecline = async (req: Request) => {
@@ -216,7 +240,6 @@ export default function AdminAppointments() {
       .eq('id', req.id);
 
     if (!error) {
-      // 👉 AUDIT LOG
       await logAuditAction('Decline Appointment', req.name, `Declined requested appointment for ${req.service} on ${req.dateStr} at ${req.time}`);
 
       setRequests(prev => prev.filter(r => r.id !== req.id));
@@ -252,7 +275,6 @@ export default function AdminAppointments() {
       .single();
 
     if (!error && data) {
-      // 👉 AUDIT LOG
       await logAuditAction('Manual Appointment', newEntryForm.name, `Manually encoded appointment for ${newEntryForm.service} on ${newEntryForm.date}`);
 
       const [y, m, d] = newEntryForm.date.split('-');
@@ -262,7 +284,8 @@ export default function AdminAppointments() {
         name: data.name,
         service: data.service,
         date: new Date(parseInt(y), parseInt(m) - 1, parseInt(d)),
-        time: newEntryForm.time
+        time: newEntryForm.time,
+        status: 'confirmed'
       }]);
       
       setIsModalOpen(false);
@@ -279,7 +302,6 @@ export default function AdminAppointments() {
   return (
     <div className="fade-in">
       
-      {/* ── Page Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
         <div>
           <h1 className="font-serif text-3xl font-bold text-dental-900">Appointment Schedule</h1>
@@ -303,9 +325,7 @@ export default function AdminAppointments() {
 
       <div className="grid lg:grid-cols-3 gap-8">
         
-        {/* ── Dynamic Calendar Section ── */}
         <div className="lg:col-span-2 bg-white rounded-3xl shadow-lg border border-gray-100 p-4 sm:p-6 overflow-hidden">
-          
           <div className="flex justify-between items-center mb-6">
             <h2 className="font-serif text-xl sm:text-2xl font-bold text-gray-900">
               {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -369,7 +389,6 @@ export default function AdminAppointments() {
           </div>
         </div>
 
-        {/* ── Pending Requests List ── */}
         <div className="lg:col-span-1 space-y-4">
           <h3 className="font-serif text-xl font-bold text-gray-900 flex items-center justify-between">
             Pending Requests
@@ -400,10 +419,10 @@ export default function AdminAppointments() {
 
                   <div className="flex gap-2 mt-4">
                       <button
-                        onClick={() => handleConfirm(req)}
+                        onClick={() => openApprovalModal(req)}
                         className="flex-1 bg-accent-50 text-accent-700 hover:bg-accent-100 py-2 rounded-lg text-xs font-bold transition flex justify-center items-center gap-1"
                       >
-                        <Check className="w-4 h-4" /> Confirm
+                        <Check className="w-4 h-4" /> Approve & Review
                       </button>
                       <button
                         onClick={() => handleDecline(req)}
@@ -418,7 +437,78 @@ export default function AdminAppointments() {
         </div>
       </div>
 
-      {/* ── Day Details Modal ── */}
+      {approvalModal.isOpen && approvalModal.req && (
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="font-serif text-xl font-bold text-dental-900 mb-1">Confirm Procedure Duration</h3>
+              <p className="text-sm text-gray-600">Review time blocks for {approvalModal.req.name}'s {approvalModal.req.service}.</p>
+            </div>
+            
+            <div className="p-6 space-y-5">
+              
+              <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 text-sm">
+                <h4 className="font-bold text-[#0c4a6e] flex items-center gap-2 mb-2">
+                  <Phone className="w-4 h-4" /> Contact Patient First
+                </h4>
+                <div className="space-y-1 text-gray-700">
+                  <p><span className="font-semibold text-gray-900">Phone:</span> {approvalModal.req.phone || 'Not provided'}</p>
+                  <p><span className="font-semibold text-gray-900">Email:</span> {approvalModal.req.email || 'Not provided'}</p>
+                </div>
+                <p className="text-xs text-sky-700 italic mt-3 leading-relaxed">
+                  * Please call the patient to discuss the procedure and determine how many hours to block before sending the approval request.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Procedure Duration</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[1, 2, 3, 4, 5, 6].map(hrs => (
+                    <button
+                      key={hrs}
+                      onClick={() => setApprovalModal(prev => ({...prev, duration: hrs}))}
+                      className={`py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                        approvalModal.duration === hrs 
+                          ? 'bg-dental-600 text-white border-dental-600 shadow-md scale-105' 
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-dental-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      {hrs} Hour{hrs > 1 ? 's' : ''}
+                    </button>
+                  ))}
+                </div>
+                {approvalModal.duration > 1 && (
+                  <p className="text-xs text-amber-600 font-medium mt-3 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                    The next {approvalModal.duration - 1} hour(s) will be automatically blocked off the calendar.
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3 text-blue-800 text-xs leading-relaxed">
+                <ShieldAlert className="w-5 h-5 shrink-0 text-blue-600" />
+                <p>After clicking approve, the patient will receive a notification and has <strong>2 hours</strong> to confirm their appointment, or the slot will be released back to the public.</p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setApprovalModal({isOpen: false, req: null, duration: 1})}
+                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={submitApproval}
+                  disabled={isSendingApproval}
+                  className="flex-1 px-4 py-3 bg-accent-600 hover:bg-accent-700 text-white font-bold rounded-xl transition disabled:opacity-50 shadow-md hover:shadow-lg"
+                >
+                  {isSendingApproval ? 'Sending...' : 'Send Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isDayDetailsModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
@@ -434,12 +524,17 @@ export default function AdminAppointments() {
             
             <div className="p-6 overflow-y-auto space-y-4">
               {selectedDateAppointments.map(app => (
-                <div key={app.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:border-dental-300 transition-colors">
+                <div key={app.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:border-dental-300 transition-colors relative overflow-hidden">
+                  {app.status === 'awaiting_confirmation' && (
+                    <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">
+                      Awaiting Patient
+                    </div>
+                  )}
                   <div className="flex justify-between items-start mb-3">
-                    <h4 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                    <h4 className="font-bold text-gray-900 text-lg flex items-center gap-2 mt-1">
                       <User className="w-5 h-5 text-dental-500"/> {app.name}
                     </h4>
-                    <span className="bg-accent-100 text-accent-700 text-xs px-2.5 py-1 rounded-md font-bold">
+                    <span className="bg-accent-100 text-accent-700 text-xs px-2.5 py-1 rounded-md font-bold mt-1">
                       {app.service}
                     </span>
                   </div>
@@ -468,7 +563,6 @@ export default function AdminAppointments() {
         </div>
       )}
 
-      {/* ── New Entry Modal ── */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">

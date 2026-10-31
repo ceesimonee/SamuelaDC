@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { Smile, Menu, LogOut, MessageSquare } from 'lucide-react';
+import { Link, useNavigate, Outlet, useLocation } from 'react-router-dom'; 
+import { Smile, Menu, LogOut, MessageSquare, CheckCircle2, X } from 'lucide-react';
 import { supabase } from './lib/supabase'; 
 
 export default function AdminLayout() {
@@ -10,6 +10,8 @@ export default function AdminLayout() {
   
   const [pendingCount, setPendingCount] = useState(0);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  const [toastMsg, setToastMsg] = useState<{title: string, desc: string} | null>(null);
 
   const isActive = (path: string) => location.pathname === path ? "active-nav text-dental-600" : "text-gray-700";
 
@@ -38,10 +40,29 @@ export default function AdminLayout() {
     fetchPendingCount();
     fetchUnreadChats();
 
+    // 👉 FIXED: Realtime listener now correctly fetches the appointment details to trigger the toast!
     const apptChannel = supabase
       .channel(`public:appointments_layout_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' }, async (payload) => {
         fetchPendingCount();
+
+        const newRow = payload.new;
+        
+        if (newRow.status === 'confirmed') {
+          // Because Supabase 'UPDATE' events often omit unedited columns (like name), we fetch the full row
+          const { data } = await supabase.from('appointments').select('name, service').eq('id', newRow.id).single();
+          
+          if (data) {
+            setToastMsg({
+              title: 'Appointment Confirmed!',
+              desc: `${data.name} just secured their ${data.service} slot.`
+            });
+            
+            setTimeout(() => {
+              setToastMsg(null);
+            }, 8000);
+          }
+        }
       })
       .subscribe();
 
@@ -84,7 +105,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="text-gray-800 antialiased selection:bg-dental-100 selection:text-dental-900 bg-slate-50 min-h-screen">
+    <div className="text-gray-800 antialiased selection:bg-dental-100 selection:text-dental-900 bg-slate-50 min-h-screen relative overflow-hidden">
       
       <nav className="fixed w-full z-50 glass-effect border-b border-gray-100 transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -114,7 +135,6 @@ export default function AdminLayout() {
               </Link>
               <Link to="/admin/patients" className={`nav-link hover:text-dental-600 font-medium transition ${isActive('/admin/patients')}`}>Records</Link>
               
-              {/* 👉 NEW SERVICES TAB ADDED HERE */}
               <Link to="/admin/services" className={`nav-link hover:text-dental-600 font-medium transition ${isActive('/admin/services')}`}>Services</Link>
 
               <div className="w-px h-6 bg-gray-200 mx-2"></div>
@@ -182,7 +202,6 @@ export default function AdminLayout() {
               </Link>
               <Link to="/admin/patients" onClick={() => setMobileMenuOpen(false)} className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/patients') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>Records</Link>
               
-              {/* 👉 NEW SERVICES TAB FOR MOBILE */}
               <Link to="/admin/services" onClick={() => setMobileMenuOpen(false)} className={`block w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/services') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>Services</Link>
 
               <Link to="/admin/messages" onClick={() => setMobileMenuOpen(false)} className={`flex items-center justify-between w-full text-left px-3 py-3 rounded-md font-medium transition ${isActive('/admin/messages') === 'text-gray-700' ? 'text-gray-700 hover:bg-dental-50 hover:text-dental-600' : 'bg-dental-50 text-dental-600'}`}>
@@ -202,6 +221,18 @@ export default function AdminLayout() {
           </div>
         )}
       </nav>
+
+      {/* 👉 GLOBAL ADMIN TOAST NOTIFICATION WITH DISMISS BUTTON */}
+      <div className={`fixed top-24 right-4 bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl transform transition-all duration-500 z-[100] flex items-start gap-3 ${toastMsg ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}`}>
+        <CheckCircle2 className="w-6 h-6 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <h4 className="font-bold text-sm">{toastMsg?.title}</h4>
+          <p className="text-xs text-emerald-100 mt-0.5">{toastMsg?.desc}</p>
+        </div>
+        <button onClick={() => setToastMsg(null)} className="text-emerald-200 hover:text-white transition">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
       <main className="pt-28 pb-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <Outlet />

@@ -28,10 +28,10 @@ export default function Appointment() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authenticatedUser, setAuthenticatedUser] = useState<any>(null);
 
-  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  // 👉 NEW: We now track exactly WHY a slot is booked to provide tooltip feedback
+  const [slotStatuses, setSlotStatuses] = useState<Record<string, string>>({});
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   
-  // 👉 NEW: State to hold our dynamic database services
   const [dynamicServices, setDynamicServices] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
@@ -71,7 +71,6 @@ export default function Appointment() {
       setIsCheckingAuth(false);
     };
 
-    // 👉 NEW: Fetch dynamic services for the dropdown
     const fetchServices = async () => {
       const { data } = await supabase.from('clinic_services').select('name').order('id');
       if (data) {
@@ -94,7 +93,7 @@ export default function Appointment() {
   useEffect(() => {
     const fetchBookingsForDate = async () => {
       if (!formData.date) {
-        setBookedSlots([]);
+        setSlotStatuses({});
         setAvailableSlots([]);
         return;
       }
@@ -105,7 +104,7 @@ export default function Appointment() {
 
       if (dayOfWeek === 0) {
         setAvailableSlots([]);
-        setBookedSlots([]);
+        setSlotStatuses({});
         return;
       }
 
@@ -120,18 +119,35 @@ export default function Appointment() {
 
       const { data, error } = await supabase
         .from('appointments')
-        .select('appointment_time, status')
+        .select('appointment_time, status, blocked_slots, expires_at')
         .eq('appointment_date', formData.date);
 
       if (data && !error) {
-        const taken = data
-          .filter(app => {
-            const stat = (app.status || '').toLowerCase();
-            return !['cancelled', 'declined', 'rejected', 'completed'].includes(stat);
-          })
-          .map(app => normalizeTime(app.appointment_time));
+        const statuses: Record<string, string> = {};
+        
+        data.forEach(app => {
+          const stat = (app.status || '').toLowerCase();
           
-        setBookedSlots(taken);
+          if (!['cancelled', 'declined', 'rejected', 'completed'].includes(stat)) {
+            
+            // 👉 NEW: If the 2 hour window has expired, unblock the slot!
+            if (stat === 'awaiting_confirmation' && app.expires_at) {
+              if (new Date(app.expires_at) < new Date()) {
+                return; // Skip adding to blocked statuses
+              }
+            }
+
+            statuses[normalizeTime(app.appointment_time)] = stat;
+            
+            if (app.blocked_slots && Array.isArray(app.blocked_slots)) {
+              app.blocked_slots.forEach(slot => {
+                statuses[normalizeTime(slot)] = stat;
+              });
+            }
+          }
+        });
+          
+        setSlotStatuses(statuses);
       }
     };
 
@@ -170,7 +186,7 @@ export default function Appointment() {
 
     const { data: conflictCheck, error: fetchErr } = await supabase
       .from('appointments')
-      .select('appointment_time, status')
+      .select('appointment_time, status, blocked_slots, expires_at')
       .eq('appointment_date', formData.date);
 
     if (fetchErr) {
@@ -179,18 +195,32 @@ export default function Appointment() {
       return;
     }
 
-    const hasConflict = conflictCheck?.some(app => {
+    let isSlotConflict = false;
+    conflictCheck?.forEach(app => {
       const stat = (app.status || '').toLowerCase();
       const isActive = !['cancelled', 'declined', 'rejected', 'completed'].includes(stat);
-      const isSameTime = normalizeTime(app.appointment_time) === formData.time;
-      return isActive && isSameTime;
+      if (isActive) {
+        
+        if (stat === 'awaiting_confirmation' && app.expires_at) {
+          if (new Date(app.expires_at) < new Date()) {
+            return; 
+          }
+        }
+
+        if (normalizeTime(app.appointment_time) === formData.time) isSlotConflict = true;
+        if (app.blocked_slots && Array.isArray(app.blocked_slots)) {
+          if (app.blocked_slots.some(slot => normalizeTime(slot) === formData.time)) {
+            isSlotConflict = true;
+          }
+        }
+      }
     });
 
-    if (hasConflict) {
-      alert("Race condition prevented! Another patient just booked this exact time slot. Please choose another time.");
+    if (isSlotConflict) {
+      alert("Race condition prevented! Another patient just booked or blocked this exact time slot. Please choose another time.");
       setIsSubmitting(false);
       setFormData({ ...formData, time: '' }); 
-      setBookedSlots(prev => [...prev, formData.time]); 
+      setSlotStatuses(prev => ({...prev, [formData.time]: 'pending'})); 
       return;
     }
     
@@ -393,7 +423,6 @@ export default function Appointment() {
                           className="w-full appearance-none px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-gray-50 focus:bg-white text-gray-700 disabled:opacity-60"
                         >
                           <option value="" disabled>Select a primary service</option>
-                          {/* 👉 DYNAMICALLY POPULATED FROM DATABASE */}
                           {dynamicServices.map(service => (
                             <option key={service} value={service}>{service}</option>
                           ))}
@@ -428,18 +457,28 @@ export default function Appointment() {
                       ) : (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                           {availableSlots.map(slot => {
-                            const isBooked = bookedSlots.includes(slot);
+                            const stat = slotStatuses[slot];
+                            const isBooked = !!stat;
                             const isSelected = formData.time === slot;
+                            
+                            // 👉 NEW: Specific messaging for tooltips based on the slot status
+                            let tooltipMessage = "";
+                            if (stat === 'awaiting_confirmation') {
+                              tooltipMessage = "The time slot is temporarily blocked for confirmation";
+                            } else if (stat === 'confirmed' || stat === 'pending') {
+                              tooltipMessage = "Sorry, this time slot was appointed";
+                            }
                             
                             return (
                               <button
                                 key={slot}
                                 type="button"
+                                title={tooltipMessage}
                                 disabled={isBooked || !authenticatedUser}
                                 onClick={() => setFormData({ ...formData, time: slot })}
                                 className={`py-3 px-2 rounded-xl text-sm font-bold transition-all duration-200 ${
                                   isBooked 
-                                    ? 'bg-gray-100 text-gray-400 line-through cursor-not-allowed border border-transparent' 
+                                    ? 'bg-gray-100 text-gray-400 line-through cursor-help border border-transparent' 
                                     : isSelected 
                                       ? 'bg-dental-600 text-white shadow-md shadow-dental-600/30 border border-dental-600 scale-105' 
                                       : 'bg-white border border-gray-200 text-gray-700 hover:border-dental-500 hover:text-dental-600 hover:shadow-sm'

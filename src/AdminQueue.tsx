@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, MessageSquare, X, ChevronDown, ExternalLink } from 'lucide-react';
+import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, MessageSquare, X, ChevronDown, ExternalLink, SkipForward } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Patient = {
@@ -29,7 +29,6 @@ export default function AdminQueue() {
   const [queue, setQueue] = useState<Patient[]>([]);
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null);
   
-  // 👉 DYNAMIC SERVICES STATE
   const [clinicServices, setClinicServices] = useState<string[]>(['General Checkup']);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,15 +51,14 @@ export default function AdminQueue() {
     fetchQueue();
     fetchSmsQuota();
     fetchAdminSession();
-    fetchClinicServices(); // Fetch Dynamic Services on Mount
+    fetchClinicServices(); 
   }, []);
 
-  // Fetch dynamic services for the manual entry dropdown
   const fetchClinicServices = async () => {
     const { data } = await supabase.from('clinic_services').select('name').order('id');
     if (data && data.length > 0) {
       setClinicServices(data.map(s => s.name));
-      setManualForm(prev => ({ ...prev, service: data[0].name })); // Default to first service
+      setManualForm(prev => ({ ...prev, service: data[0].name })); 
     }
   };
 
@@ -146,7 +144,6 @@ export default function AdminQueue() {
     fetchWeekAppointments();
   };
 
-  // 👉 FIXED: Bulletproof logic to extract sequential ticket numbers
   const getNextTicketNumber = async () => {
     const todayStr = new Date().toISOString().split('T')[0];
     
@@ -160,7 +157,6 @@ export default function AdminQueue() {
       return "1";
     }
     
-    // Completely strip out '#' before parsing, ensuring we get a clean integer
     const numbers = data.map(q => parseInt(q.ticket.replace(/\D/g, ''))).filter(n => !isNaN(n));
     const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
     return nextNum.toString();
@@ -225,6 +221,28 @@ export default function AdminQueue() {
     
     await logAuditAction('Call Next Patient', nextPatient.name, `Called ticket ${nextPatient.ticket} to be served.`);
     
+    fetchQueue();
+  };
+
+  // 👉 NEW: The Skip Logic 
+  const handleSkip = async () => {
+    if (!currentPatient) return;
+    
+    // Change current patient status back to 'waiting' (forces them to top of list based on created_at timestamp)
+    await supabase.from('queue').update({ status: 'waiting' }).eq('id', currentPatient.id);
+    
+    let logDetails = `Skipped ticket ${currentPatient.ticket}. Placed back at the top of the waiting queue.`;
+
+    // Immediately pull the next person in line up to serving (if there is one)
+    if (queue.length > 0) {
+      const nextPatient = queue[0];
+      await supabase.from('queue').update({ status: 'serving' }).eq('id', nextPatient.id);
+      logDetails += ` Called ticket ${nextPatient.ticket} instead.`;
+    }
+
+    await logAuditAction('Skip Patient', currentPatient.name, logDetails);
+    
+    setCurrentPatient(null);
     fetchQueue();
   };
 
@@ -420,24 +438,31 @@ export default function AdminQueue() {
                 )}
               </div>
               
-              <div className="grid grid-cols-2 gap-3">
+              {/* 👉 NEW: 3-Column Action Grid including Skip */}
+              <div className="grid grid-cols-3 gap-2">
                 <button 
                   onClick={markComplete} 
                   disabled={!currentPatient || isSaved}
-                  className="bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-100 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="bg-white border border-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-gray-100 transition flex items-center justify-center gap-1.5 disabled:opacity-50 text-[13px]"
                 >
-                  {isSaved ? (
-                    <><Check className="w-4 h-4 text-accent-600" /> Saved!</>
-                  ) : (
-                    <><CheckCircle className="w-4 h-4 text-accent-600" /> Done</>
-                  )}
+                  {isSaved ? <Check className="w-4 h-4 text-accent-600" /> : <CheckCircle className="w-4 h-4 text-accent-600" />}
+                  <span>{isSaved ? 'Saved!' : 'Done'}</span>
+                </button>
+                <button 
+                  onClick={handleSkip} 
+                  disabled={!currentPatient}
+                  className="bg-white border border-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50 text-[13px]"
+                >
+                  <SkipForward className="w-4 h-4 text-orange-500" />
+                  <span>Skip</span>
                 </button>
                 <button 
                   onClick={handleNoShow} 
                   disabled={!currentPatient}
-                  className="bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-100 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="bg-white border border-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50 text-[13px]"
                 >
-                  <UserX className="w-4 h-4 text-red-500" /> No Show
+                  <UserX className="w-4 h-4 text-red-500" />
+                  <span>No Show</span>
                 </button>
               </div>
             </div>
@@ -485,7 +510,7 @@ export default function AdminQueue() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up flex flex-col max-h-[90vh]">
             
             <div className="pt-5 px-5 border-b border-gray-100 bg-white shrink-0">
@@ -590,7 +615,6 @@ export default function AdminQueue() {
                       onChange={e => setManualForm({...manualForm, service: e.target.value})}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-dental-500 outline-none transition bg-white text-sm"
                     >
-                      {/* 👉 DYNAMICALLY POPULATED FROM DATABASE */}
                       {clinicServices.map(service => (
                         <option key={service} value={service}>{service}</option>
                       ))}
