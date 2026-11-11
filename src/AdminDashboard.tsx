@@ -299,42 +299,50 @@ export default function AdminDashboard() {
     }
   };
 
+  // 👉 UPDATED: No 6-month restriction, counts all completed/cancelled/no-show records
   const fetchArchivableCount = async () => {
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
-    const cutoffIso = sixMonthsAgo.toISOString();
-
     const { count: apptCount } = await supabase
       .from('appointments')
       .select('*', { count: 'exact', head: true })
-      .in('status', ['completed', 'cancelled', 'no_show'])
-      .lt('appointment_date', cutoffDate);
+      .in('status', ['completed', 'cancelled', 'no_show']);
 
     const { count: queueCount } = await supabase
       .from('queue')
       .select('*', { count: 'exact', head: true })
-      .in('status', ['completed', 'no_show'])
-      .lt('created_at', cutoffIso);
+      .in('status', ['completed', 'no_show']);
 
     setArchivableCount((apptCount || 0) + (queueCount || 0));
   };
 
+  // 👉 UPDATED: Archives immediately without date constraints
   const handleArchiveData = async () => {
-    if (archivableCount === 0) return;
+    if (archivableCount === 0) {
+      alert("System Check: No eligible records found to archive.");
+      return;
+    }
     
-    if (!window.confirm(`RA 10173 Compliance: Are you sure you want to securely move ${archivableCount} old records to cold storage?`)) return;
+    if (!window.confirm(`Are you sure you want to securely archive ${archivableCount} records?`)) return;
 
     setIsArchiving(true);
-    const { error } = await supabase.rpc('archive_old_records');
 
-    if (!error) {
-      alert("Data Privacy Compliance Sweep Successful! Records moved to secure archive.");
+    try {
+      await supabase
+        .from('appointments')
+        .update({ status: 'archived' })
+        .in('status', ['completed', 'cancelled', 'no_show']);
+
+      await supabase
+        .from('queue')
+        .update({ status: 'archived' })
+        .in('status', ['completed', 'no_show']);
+
+      alert("Cleanup Successful! Records moved to secure archive.");
       setArchivableCount(0); 
-    } else {
+    } catch (error: any) {
       alert("Failed to archive records: " + error.message);
+    } finally {
+      setIsArchiving(false);
     }
-    setIsArchiving(false);
   };
 
   const fetchTasks = async () => {
@@ -380,15 +388,15 @@ export default function AdminDashboard() {
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <button 
             onClick={handleArchiveData}
-            disabled={isArchiving || archivableCount === 0}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-bold transition shadow-sm ${
+            disabled={isArchiving}
+            className={`flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-semibold transition shadow-sm ${
               archivableCount > 0 
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 cursor-pointer' 
-                : 'bg-white text-gray-400 border-gray-200 cursor-not-allowed'
+                ? 'text-emerald-700 hover:bg-emerald-50 border-emerald-200 cursor-pointer' 
+                : 'text-gray-500 hover:bg-gray-50 cursor-pointer'
             }`}
-            title="Data Privacy Act (Archive Old Records)"
+            title="Archive Completed Records"
           >
-            <Archive className="w-5 h-5" />
+            <Archive className="w-4 h-4" />
             {isArchiving ? 'Archiving...' : `Archive Data (${archivableCount})`}
           </button>
 

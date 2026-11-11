@@ -96,8 +96,6 @@ export default function AdminPatients() {
   const [isSavingTooth, setIsSavingTooth] = useState(false);
 
   const [patientFileRecords, setPatientFileRecords] = useState<PatientFileRecord[]>([]);
-  
-  // 👉 NEW: State for opening a specific file card to view its clean contents
   const [viewingFileRecord, setViewingFileRecord] = useState<PatientFileRecord | null>(null);
 
   useEffect(() => {
@@ -402,11 +400,9 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     localStorage.setItem(`samuela_patient_files_${selectedPatient.id}`, JSON.stringify(updated));
   };
 
-  // 👉 NEW: Delete Image File
   const handleDeleteImage = async (imageId: number, imagePath: string) => {
     if (!window.confirm("Delete this attached file? This cannot be undone.")) return;
     try {
-      // If it's a Supabase URL, extract filename and delete from storage
       if (imagePath.includes('supabase.co')) {
         const urlParts = imagePath.split('/');
         const fileName = urlParts[urlParts.length - 1];
@@ -414,11 +410,9 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
         await supabase.from('patient-images').delete().eq('id', imageId);
       }
       
-      // Update state
       const updated = patientImages.filter(img => img.id !== imageId);
       setPatientImages(updated);
       
-      // Update local storage if it was a local fallback
       if (selectedPatient) {
         localStorage.setItem(`samuela_local_images_${selectedPatient.id}`, JSON.stringify(updated.filter(img => !img.image_url.includes('supabase.co'))));
       }
@@ -588,6 +582,9 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
     printWindow.document.write(`<html><head><title>${fileSnapshot ? fileSnapshot.fileName : `Patient Chart - ${patient.name}`}</title><style>body { font-family: sans-serif; padding: 35px; color: #1f2937; line-height: 1.5; } .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #f8fafc; padding: 18px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 25px; font-size: 13px; } .notes-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; font-family: monospace; white-space: pre-wrap; font-size: 13px; line-height: 1.6; } table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 25px; } th { background-color: #f1f5f9; text-align: left; padding: 8px 10px; border: 1px solid #cbd5e1; } td { padding: 8px 10px; border: 1px solid #cbd5e1; }</style></head><body><h2>Samuela Dental Clinic</h2><p>${docSubtitle}</p><div class="info-grid"><div><strong>Patient Name:</strong> ${patient.name}</div><div><strong>Sex:</strong> ${patient.sex || 'N/A'}</div><div><strong>Birthdate:</strong> ${patient.birthdate || 'N/A'}</div><div><strong>Phone Number:</strong> ${patient.phone || 'N/A'}</div><div><strong>Email Address:</strong> ${patient.email || 'N/A'}</div><div><strong>Date Registered:</strong> ${new Date(patient.created_at).toLocaleDateString('en-US')}</div><div style="grid-column: span 2;"><strong>Home Address:</strong> ${patient.address || 'N/A'}</div></div><h3>Dental Chart (Odontogram) History</h3>${dentalRowsHtml}<h3>Clinical Notes & Medical History</h3><div class="notes-box">${notesToPrint || 'No clinical notes recorded.'}</div><script>window.onload=function(){setTimeout(function(){window.print();},250);};</script></body></html>`);
     printWindow.document.close();
   };
+
+  // 👉 NEW: This computes the isolated history specifically for the tooth currently selected
+  const selectedToothHistory = dentalChartEntries.filter(entry => entry.toothNumber === selectedTooth);
 
   return (
     <>
@@ -870,18 +867,19 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
 
                     <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-3">
-                        <h5 className="font-serif text-base font-bold text-gray-900 flex items-center gap-2"><Clock className="w-4 h-4 text-dental-600" /> Recorded Tooth History</h5>
-                        <span className="text-xs font-bold text-dental-700 bg-dental-50 px-2.5 py-1 rounded-full">{dentalChartEntries.length} Records Saved</span>
+                        <h5 className="font-serif text-base font-bold text-gray-900 flex items-center gap-2"><Clock className="w-4 h-4 text-dental-600" /> History: Tooth #{selectedTooth}</h5>
+                        <span className="text-xs font-bold text-dental-700 bg-dental-50 px-2.5 py-1 rounded-full">{selectedToothHistory.length} Records</span>
                       </div>
 
-                      {dentalChartEntries.length === 0 ? (
+                      {/* 👉 NEW: Filtered History Display - only shows history for the selectedTooth */}
+                      {selectedToothHistory.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-8 text-gray-400">
-                          <p className="text-sm font-medium text-gray-500">No tooth conditions recorded yet.</p>
-                          <p className="text-xs mt-1">Select a tooth above and click Save to log findings.</p>
+                          <p className="text-sm font-medium text-gray-500">No history for Tooth #{selectedTooth}.</p>
+                          <p className="text-xs mt-1">Select condition and treatment to log findings.</p>
                         </div>
                       ) : (
                         <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                          {dentalChartEntries.map(entry => (
+                          {selectedToothHistory.map(entry => (
                             <div key={entry.id} onClick={() => {
                               setSelectedTooth(entry.toothNumber);
                               setToothCondition(entry.condition);
@@ -934,7 +932,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                   </div>
 
                   <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[340px]">
-                    {/* View Specific Document or Fallback to Latest/Welcome Message */}
                     {viewingFileRecord ? (
                       <div className="flex flex-col h-full">
                         <div className="bg-gray-50 border-b border-gray-100 px-4 py-3 shrink-0 flex justify-between items-center">
@@ -976,7 +973,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                   </div>
 
                   <div className="flex-1 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm overflow-y-auto min-h-[340px] space-y-3.5">
-                    {/* Render Every Historical File Card (Newest First) */}
                     {patientFileRecords.map((fileRec, idx) => {
                       const isLatest = idx === 0;
                       return (
@@ -1044,7 +1040,6 @@ Medical Conditions: ${newPatientForm.conditions || 'None reported'}`;
                       );
                     })}
 
-                    {/* 👉 FIXED: Added Red Trash Bin button for Image Attachments */}
                     {patientImages.length > 0 && (
                       <div className="pt-3 border-t border-gray-100">
                         <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">

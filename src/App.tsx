@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import Login from './Login'
 import Appointment from './Appointment'
 import About from './About' 
+import ArchivedRecords from './ArchivedRecords';
 
 import ToothFilling from './services/ToothFilling'
 import Cleaning from './services/Cleaning';
@@ -902,6 +903,8 @@ export default function App() {
             <Route path="tracking" element={<AdminTracking />} />
             <Route path="messages" element={<AdminMessages />} />
             <Route path="services" element={<AdminServices />} />
+            {/* 👉 ADDED ROUTE HERE: */}
+            <Route path="archives" element={<ArchivedRecords />} />
           </Route>
         </Route>
       </Routes>

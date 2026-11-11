@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, MessageSquare, X, ChevronDown, ExternalLink, SkipForward } from 'lucide-react';
+import { UserPlus, BellRing, CheckCircle, UserX, Coffee, Check, MessageSquare, X, ChevronDown, ExternalLink, SkipForward, CornerUpLeft } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Patient = {
@@ -27,6 +27,7 @@ type Appointment = {
 
 export default function AdminQueue() {
   const [queue, setQueue] = useState<Patient[]>([]);
+  const [skippedQueue, setSkippedQueue] = useState<Patient[]>([]);
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null);
   
   const [clinicServices, setClinicServices] = useState<string[]>(['General Checkup']);
@@ -91,6 +92,7 @@ export default function AdminQueue() {
   };
 
   const fetchQueue = async () => {
+    // 1. Fetch Waiting Queue
     const { data: waitingData, error: waitingError } = await supabase
       .from('queue')
       .select('*')
@@ -101,15 +103,26 @@ export default function AdminQueue() {
       setQueue(waitingData);
     }
 
+    // 2. Fetch Skipped Queue 
+    const { data: skippedData, error: skippedError } = await supabase
+      .from('queue')
+      .select('*')
+      .eq('status', 'skipped')
+      .order('created_at', { ascending: false });
+
+    if (!skippedError && skippedData) {
+      setSkippedQueue(skippedData);
+    }
+
+    // 3. Fetch Currently Serving (FIXED: removed .single() to prevent crashes if DB goes out of sync)
     const { data: servingData } = await supabase
       .from('queue')
       .select('*')
       .eq('status', 'serving')
-      .limit(1)
-      .single();
+      .limit(1);
 
-    if (servingData) {
-      setCurrentPatient(servingData);
+    if (servingData && servingData.length > 0) {
+      setCurrentPatient(servingData[0]);
     } else {
       setCurrentPatient(null);
     }
@@ -224,16 +237,19 @@ export default function AdminQueue() {
     fetchQueue();
   };
 
-  // 👉 NEW: The Skip Logic 
+  // 👉 FIXED: Added explicit error catching so we know EXACTLY why Supabase is rejecting the skip
   const handleSkip = async () => {
     if (!currentPatient) return;
     
-    // Change current patient status back to 'waiting' (forces them to top of list based on created_at timestamp)
-    await supabase.from('queue').update({ status: 'waiting' }).eq('id', currentPatient.id);
+    const { error: skipErr } = await supabase.from('queue').update({ status: 'skipped' }).eq('id', currentPatient.id);
     
-    let logDetails = `Skipped ticket ${currentPatient.ticket}. Placed back at the top of the waiting queue.`;
+    if (skipErr) {
+      alert(`DATABASE BLOCKED THE SKIP:\n\n${skipErr.message}\n\nYour database column is likely restricting the text to specific words. Paste this error to me so I can give you the SQL to fix it!`);
+      return; // Stop running code so it doesn't break the queue sequence!
+    }
+    
+    let logDetails = `Skipped ticket ${currentPatient.ticket}. Placed in the skipped patients list.`;
 
-    // Immediately pull the next person in line up to serving (if there is one)
     if (queue.length > 0) {
       const nextPatient = queue[0];
       await supabase.from('queue').update({ status: 'serving' }).eq('id', nextPatient.id);
@@ -244,6 +260,14 @@ export default function AdminQueue() {
     
     setCurrentPatient(null);
     fetchQueue();
+  };
+
+  const handleRestoreSkipped = async (patient: Patient) => {
+    if (window.confirm(`Insert ${patient.name} back into the waiting queue?`)) {
+      await supabase.from('queue').update({ status: 'waiting' }).eq('id', patient.id);
+      await logAuditAction('Restore Skipped', patient.name, `Restored skipped ticket ${patient.ticket} back to the waiting queue.`);
+      fetchQueue();
+    }
   };
 
   const markComplete = async () => {
@@ -335,7 +359,7 @@ export default function AdminQueue() {
   const smsPercentage = Math.round((smsUsed / smsQuota.total) * 100);
 
   const availableAppointments = weekAppointments.filter(
-    apt => !queue.some(q => q.name === apt.name) && currentPatient?.name !== apt.name
+    apt => !queue.some(q => q.name === apt.name) && currentPatient?.name !== apt.name && !skippedQueue.some(q => q.name === apt.name)
   );
 
   return (
@@ -438,7 +462,6 @@ export default function AdminQueue() {
                 )}
               </div>
               
-              {/* 👉 NEW: 3-Column Action Grid including Skip */}
               <div className="grid grid-cols-3 gap-2">
                 <button 
                   onClick={markComplete} 
@@ -469,7 +492,8 @@ export default function AdminQueue() {
           </div>
         </div>
 
-        <div className="lg:col-span-7">
+        <div className="lg:col-span-7 flex flex-col gap-6">
+          
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6">
             <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
               <h3 className="font-serif text-xl font-bold text-gray-900">Up Next / Waiting</h3>
@@ -506,6 +530,51 @@ export default function AdminQueue() {
               )}
             </div>
           </div>
+
+          {skippedQueue.length > 0 && (
+            <div className="bg-white rounded-3xl shadow-lg border border-orange-100 p-6 fade-in relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full mix-blend-multiply filter blur-2xl opacity-50 pointer-events-none" />
+              
+              <div className="flex justify-between items-center mb-6 border-b border-orange-100 pb-4 relative z-10">
+                <h3 className="font-serif text-xl font-bold text-orange-900 flex items-center gap-2">
+                  <SkipForward className="w-5 h-5" /> Skipped Patients
+                </h3>
+                <span className="bg-orange-100 text-orange-700 text-xs px-3 py-1 rounded-full font-bold">
+                  {skippedQueue.length} Skipped
+                </span>
+              </div>
+
+              <div className="space-y-3 relative z-10">
+                {skippedQueue.map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-4 rounded-xl border border-orange-100 bg-orange-50/30 transition shadow-sm">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg bg-orange-100 text-orange-700">
+                        {p.ticket}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-gray-900">{p.name}</h4>
+                          {p.isWalkin && (
+                            <span className="bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded font-bold">Walk-in</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">{p.service}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleRestoreSkipped(p)}
+                      title="Insert back into queue"
+                      className="p-2.5 bg-white text-orange-600 rounded-xl shadow-sm border border-orange-200 hover:bg-orange-600 hover:text-white transition flex items-center gap-2 group"
+                    >
+                      <CornerUpLeft className="w-4 h-4 group-hover:-translate-x-0.5 group-hover:translate-y-0.5 transition-transform" />
+                      <span className="text-xs font-bold hidden sm:inline">Return to Queue</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 
